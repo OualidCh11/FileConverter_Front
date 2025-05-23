@@ -17,15 +17,15 @@ export default function Home() {
 
       <div className="relative">
       <header className="border-b border-slate-200 dark:border-white/10 backdrop-blur-xl bg-white/70 dark:bg-black/20 transition-colors duration-500">
-          <div className="container mx-auto py-6 px-4">
+          <div className="container mx-auto px-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-3">
                 <div className="flex space-x-2 p-10">
                   <div className="flex space-x-2">
                     <img
-                      src="/Attijariwafa Bank-vector.ma.svg-vector.ma (1).png" 
+                      src="/logo-attijariwafa-bank.png" 
                       alt="Logo Attijariwafa Bank" 
-                      className="h-24 w-auto" 
+                      className="h-12 w-auto" 
                     />
                   </div>
                 </div>

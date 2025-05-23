@@ -1,6 +1,5 @@
-// Service API pour communiquer avec le backend Spring Boot
+// api-service.ts
 
-// Types basés sur les entités Java
 export interface FileEntity {
   id: number
   fileName: string
@@ -36,6 +35,8 @@ export interface ConfigMappingDetail {
   typeFile: string
   keyDistination: string
   valueDistination: string
+  startPos: number
+  endPos: number
   configMapping?: ConfigMapping
   fileDetail?: FileDetail
   outMappings?: OutMapping[]
@@ -49,132 +50,106 @@ export interface OutMapping {
 }
 
 export interface MappingDTO {
-  fileSourceName: string
   fileDestinationName: string
 }
 
 export interface ConfigMappingDTO {
-  nrLineFiles: number
   keySource: string
   typeFile: string
   keyDistination: string
-  valueDistination: string
-  configMappingId: number // ou string selon ta base
-  fileDetailId: number
+  startPos: number
+  endPos: number
+  nrLineFiles?: number
+  configMappingId?: number
+  fileDetailId?: number
 }
 
-// URL de base de l'API
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8082"
 
-// Service pour l'upload de fichiers
+// --- Upload d’un fichier
 export async function uploadFile(file: File): Promise<string> {
-  try {
-    const formData = new FormData()
-    formData.append("file", file)
+  const formData = new FormData()
+  formData.append("file", file)
 
-    const response = await fetch(`${API_BASE_URL}/api/files/upload`, {
-      method: "POST",
-      body: formData,
-    })
+  const response = await fetch(`${API_BASE_URL}/api/files/upload`, {
+    method: "POST",
+    body: formData,
+  })
 
-    if (!response.ok) {
-      const errorText = await response.text()
-      throw new Error(errorText || "Erreur lors de l'upload du fichier")
-    }
-
-    return await response.text()
-  } catch (error) {
-    console.error("Erreur lors de l'upload du fichier:", error)
-    throw error
+  if (!response.ok) {
+    const error = await response.text()
+    throw new Error(error || "Erreur upload")
   }
+
+  return await response.text()
 }
 
-// Service pour récupérer les détails d'un fichier
+// --- Obtenir les lignes du fichier
 export async function getFileDetails(fileId: number): Promise<FileDetail[]> {
-  try {
-    const response = await fetch(`${API_BASE_URL}/file-details/${fileId}`, {
-      method: "GET",
-      headers: {
-        "Content-Type": "application/json",
-      },
-    })
-
-    if (!response.ok) {
-      const errorText = await response.text()
-      throw new Error(errorText || "Erreur lors de la récupération des détails du fichier")
-    }
-
-    return await response.json()
-  } catch (error) {
-    console.error("Erreur lors de la récupération des détails du fichier:", error)
-    throw error
+  const response = await fetch(`${API_BASE_URL}/file-details/${fileId}`)
+  if (!response.ok) {
+    throw new Error("Erreur récupération détails fichier")
   }
+  return await response.json()
 }
 
-// Service pour sauvegarder une configuration de mapping
-export async function saveConfigMapping(configMappingDetail: Partial<ConfigMappingDTO>): Promise<ConfigMappingDetail> {
-  try {
-    const response = await fetch(`${API_BASE_URL}/api/conf-map/save_confmap`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(configMappingDetail),
-    })
+// --- Enregistrer un mapping de base (fileSource et fileDestination)
+export async function saveMapping(mapping: MappingDTO): Promise<ConfigMapping> {
+  const response = await fetch(`${API_BASE_URL}/api/mapping/save-map`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(mapping),
+  })
 
-    if (!response.ok) {
-      const errorText = await response.text()
-      throw new Error(errorText || "Erreur lors de la sauvegarde de la configuration")
-    }
-
-    return await response.json()
-  } catch (error) {
-    console.error("Erreur lors de la sauvegarde de la configuration:", error)
-    throw error
+  if (!response.ok) {
+    throw new Error(await response.text())
   }
+
+  return await response.json()
 }
 
-export async function saveMapping(mapping: { fileDestinationName: string }): Promise<ConfigMapping> {
-  try {
-    const response = await fetch(`${API_BASE_URL}/api/mapping/save-map`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(mapping),
-    })
+// --- Enregistrer un ou plusieurs détails de mapping
+export async function saveConfigMapping(details: ConfigMappingDTO[]): Promise<ConfigMappingDetail[]> {
+  const response = await fetch(`${API_BASE_URL}/api/conf-map/save_confmap`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(details),
+  })
 
-    if (!response.ok) {
-      const errorText = await response.text()
-      throw new Error(errorText || "Erreur lors de la sauvegarde du mapping")
-    }
-
-    return await response.json()
-  } catch (error) {
-    console.error("Erreur lors de la sauvegarde du mapping:", error)
-    throw error
+  if (!response.ok) {
+    throw new Error(await response.text())
   }
+
+  return await response.json()
 }
 
-// Service pour récupérer les résultats de conversion
-export async function getConversionResults(configMappingId: number): Promise<OutMapping[]> {
-  try {
-    const response = await fetch(`${API_BASE_URL}/api/out-mappings/by-config/${configMappingId}`, {
-      method: "GET",
-      headers: {
-        "Content-Type": "application/json",
-      },
-    })
+// --- Générer le fichier JSON final à partir du dernier mapping
+export async function generateJsonFile(): Promise<string> {
+  const response = await fetch(`${API_BASE_URL}/api/output/jsonFile`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+  })
 
-    if (!response.ok) {
-      const errorText = await response.text()
-      throw new Error(errorText || "Erreur lors de la récupération des résultats")
-    }
-
-    return await response.json()
-  } catch (error) {
-    console.error("Erreur lors de la récupération des résultats:", error)
-    throw error
+  if (!response.ok) {
+    throw new Error(await response.text())
   }
+
+  return await response.text()
 }
 
+// --- Lire le contenu du fichier JSON généré
+export async function getJsonFileContent(fileName?: string): Promise<string> {
+  if (fileName) {
+    const response = await fetch(`${API_BASE_URL}/api/output/content?fileName=${encodeURIComponent(fileName)}`)
+    if (response.ok) return await response.text()
+  }
+
+  // fallback : dernier mapping si pas de nom fourni
+  const response = await fetch(`${API_BASE_URL}/api/output/last-mapping`)
+  if (response.ok) {
+    const data = await response.json()
+    if (data?.contentMapper) return data.contentMapper
+  }
+
+  throw new Error("Impossible de lire le fichier JSON généré.")
+}

@@ -25,7 +25,7 @@ import { uploadFile } from "@/lib/api-service"
 import { useToast } from "@/hooks/use-toast"
 
 interface FileUploaderProps {
-  onContinue: (fields: string[], fileId?: number, fileName?: string) => void
+  onContinue: (fields: string[], fileId?: number, fileName?: string, fieldDefinitions?: FlatFieldDefinition[]) => void
 }
 
 interface FileTypeInfo {
@@ -36,7 +36,7 @@ interface FileTypeInfo {
   extensions: string[]
 }
 
-interface FlatFieldDefinition {
+export interface FlatFieldDefinition {
   id: number
   name: string
   startPos: number
@@ -202,7 +202,7 @@ export function FileUploader({ onContinue }: FileUploaderProps) {
   const addFlatField = () => {
     const lastField = flatFields[flatFields.length - 1]
     const newEndPos = lastField ? lastField.endPos + 10 : 10
-    setFlatFields([
+    const newFields = [
       ...flatFields,
       {
         id: flatFields.length + 1,
@@ -210,24 +210,41 @@ export function FileUploader({ onContinue }: FileUploaderProps) {
         startPos: lastField ? lastField.endPos + 1 : 1,
         endPos: newEndPos,
       },
-    ])
+    ]
+    setFlatFields(newFields)
+
+    // Mettre à jour les champs détectés
+    if (fileType === "FLAT") {
+      setFileFields(newFields.map((field) => field.name))
+    }
   }
 
   const removeFlatField = (id: number) => {
     if (flatFields.length > 1) {
-      setFlatFields(flatFields.filter((field) => field.id !== id))
+      const newFields = flatFields.filter((field) => field.id !== id)
+      setFlatFields(newFields)
+
+      // Mettre à jour les champs détectés
+      if (fileType === "FLAT") {
+        setFileFields(newFields.map((field) => field.name))
+      }
     }
   }
 
   const updateFlatField = (id: number, field: keyof FlatFieldDefinition, value: string | number) => {
-    setFlatFields(
-      flatFields.map((f) => {
-        if (f.id === id) {
-          return { ...f, [field]: value }
-        }
-        return f
-      }),
-    )
+    const newFields = flatFields.map((f) => {
+      if (f.id === id) {
+        return { ...f, [field]: value }
+      }
+      return f
+    })
+
+    setFlatFields(newFields)
+
+    // Mettre à jour les champs détectés si le nom du champ a changé
+    if (field === "name" && fileType === "FLAT") {
+      setFileFields(newFields.map((field) => field.name))
+    }
   }
 
   // Modifier la fonction handleUploadToServer pour extraire l'ID du fichier de la réponse
@@ -270,8 +287,8 @@ export function FileUploader({ onContinue }: FileUploaderProps) {
         description: "Fichier téléchargé avec succès",
       })
 
-      // Passer à l'étape suivante avec les champs détectés, l'ID du fichier et le nom du fichier
-      onContinue(fileFields, fileId, selectedFile.name)
+      // Passer à l'étape suivante avec les champs détectés, l'ID du fichier, le nom du fichier et les définitions de champs
+      onContinue(fileFields, fileId, selectedFile.name, fileType === "FLAT" ? flatFields : undefined)
     } catch (error) {
       setFileError(error instanceof Error ? error.message : "Erreur lors de l'upload du fichier")
       toast({
@@ -632,4 +649,3 @@ export function FileUploader({ onContinue }: FileUploaderProps) {
     </div>
   )
 }
-

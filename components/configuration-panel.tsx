@@ -19,14 +19,17 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useToast } from "@/hooks/use-toast"
-import { saveConfigMapping, saveMapping } from "@/lib/api-service"
-import type { ConfigMappingDTO } from "@/types"
+import { saveConfigMapping, saveMapping, generateJsonFile } from "@/lib/api-service"
+import type { MappingDTO } from "@/lib/api-service"
+import type { ConfigMappingDTO } from "@/lib/api-service"
+import type { FlatFieldDefinition } from "./file-uploader"
 
 interface ConfigurationPanelProps {
   onContinue: (configId?: number) => void
   detectedFields: string[]
   fileId?: number
   fileName?: string
+  fieldDefinitions?: FlatFieldDefinition[]
 }
 
 // Définir l'interface MappingDetail
@@ -37,9 +40,17 @@ interface MappingDetail {
   status: "AT" | "RE" | "TR"
   lineNumber?: number
   value?: string
+  startPos?: number
+  endPos?: number
 }
 
-export function ConfigurationPanel({ onContinue, detectedFields, fileId, fileName }: ConfigurationPanelProps) {
+export function ConfigurationPanel({
+  onContinue,
+  detectedFields,
+  fileId,
+  fileName,
+  fieldDefinitions,
+}: ConfigurationPanelProps) {
   // Commencer avec un seul mapping par défaut
   const [mappingDetails, setMappingDetails] = useState<MappingDetail[]>([
     { id: "mapping-1", sourceKey: "", destinationKey: "", status: "TR" },
@@ -60,7 +71,7 @@ export function ConfigurationPanel({ onContinue, detectedFields, fileId, fileNam
     fileName ? fileName.replace(/\.[^/.]+$/, ".json") : "customer_data.json",
   )
   const [fileType, setFileType] = useState("FLAT")
-  // const [status, setStatus] = useState<"AT" | "RE" | "TR">("TR")
+  const [status, setStatus] = useState<"AT" | "RE" | "TR">("TR")
 
   // État pour le chargement
   const [isLoading, setIsLoading] = useState(false)
@@ -81,6 +92,25 @@ export function ConfigurationPanel({ onContinue, detectedFields, fileId, fileNam
     setSelectedFields(fields)
   }, [mappingDetails])
 
+  // Initialiser les positions de début et de fin pour les champs FLAT
+  useEffect(() => {
+    if (fieldDefinitions && fieldDefinitions.length > 0) {
+      // Mettre à jour les mappingDetails avec les positions des champs définis
+      const updatedMappings = mappingDetails.map((mapping) => {
+        const fieldDef = fieldDefinitions.find((field) => field.name === mapping.sourceKey)
+        if (fieldDef) {
+          return {
+            ...mapping,
+            startPos: fieldDef.startPos,
+            endPos: fieldDef.endPos,
+          }
+        }
+        return mapping
+      })
+      setMappingDetails(updatedMappings)
+    }
+  }, [fieldDefinitions])
+
   const addMappingDetail = () => {
     // Générer un ID unique pour le nouveau mapping
     const newId = `mapping-${Date.now()}`
@@ -98,7 +128,14 @@ export function ConfigurationPanel({ onContinue, detectedFields, fileId, fileNam
           const updatedDetail = { ...detail, [field]: value } as MappingDetail
 
           // Si c'est un fichier plat et que nous mettons à jour sourceKey, calculons la valeur et le numéro de ligne
-          if (field === "sourceKey" && value) {
+          if (field === "sourceKey" && value && fieldDefinitions) {
+            // Trouver la définition du champ correspondant
+            const fieldDef = fieldDefinitions.find((field) => field.name === value)
+            if (fieldDef) {
+              updatedDetail.startPos = fieldDef.startPos
+              updatedDetail.endPos = fieldDef.endPos
+            }
+
             // Simuler l'extraction de valeur et numéro de ligne pour les fichiers plats
             const lines = fileContent.split("\n")
             const lineNumber = 1 // Première ligne pour l'exemple
@@ -135,11 +172,10 @@ export function ConfigurationPanel({ onContinue, detectedFields, fileId, fileNam
         fileId,
       })
 
-      // 1. D'abord, sauvegarder le mapping de base
-      const mappingData = {
-        fileDestinationName: destFileName, // ← assure-toi que `destFileName` contient une valeur valide
-      };
-  
+      // 1. D'abord, sauvegarder le mapping de base (uniquement le nom du fichier de destination)
+      const mappingData: MappingDTO = {
+        fileDestinationName: destFileName,
+      }
 
       console.log("Envoi des données de mapping:", mappingData)
       const mappingResult = await saveMapping(mappingData)
@@ -149,25 +185,34 @@ export function ConfigurationPanel({ onContinue, detectedFields, fileId, fileNam
       const configMappingId = mappingResult.id
 
       // 2. Ensuite, sauvegarder les détails de mapping
-      const savedDetails = []
-      for (const detail of mappingDetails) {
-        if (detail.sourceKey && detail.destinationKey) {
-          const configMappingDetailData: Partial<ConfigMappingDTO> = {
+      if (mappingDetails.some((detail) => detail.sourceKey && detail.destinationKey)) {
+        const configMappingDTOList: ConfigMappingDTO[] = mappingDetails
+          .filter((detail) => detail.sourceKey && detail.destinationKey)
+          .map((detail) => ({
             keySource: detail.sourceKey,
             keyDistination: detail.destinationKey,
             typeFile: fileType,
+            startPos: detail.startPos || 1,
+            endPos: detail.endPos || 10,
             nrLineFiles: detail.lineNumber || 1,
             configMappingId: configMappingId,
-            fileDetailId: fileId || 0,
-          }
+            fileDetailId: fileId,
+            valueDistination: "",
+          }))
 
-          console.log("Envoi des détails de mapping:", configMappingDetailData)
-          const detailResult = await saveConfigMapping(configMappingDetailData)
-          savedDetails.push(detailResult)
-        }
+        console.log("Envoi des détails de mapping:", configMappingDTOList)
+        const detailResult = await saveConfigMapping(configMappingDTOList)
+        console.log("Résultat des détails de mapping:", detailResult)
       }
 
-      console.log("Tous les détails sauvegardés:", savedDetails)
+      // 3. Générer le fichier JSON final
+      try {
+        const jsonResult = await generateJsonFile()
+        console.log("Résultat de la génération JSON:", jsonResult)
+      } catch (error) {
+        console.error("Erreur lors de la génération du fichier JSON:", error)
+        // Continuer même si la génération échoue
+      }
 
       toast({
         title: "Succès",
@@ -343,7 +388,7 @@ export function ConfigurationPanel({ onContinue, detectedFields, fileId, fileNam
                               </SelectContent>
                             </Select>
                             <p className="text-xs text-slate-500 dark:text-white/60 transition-colors duration-500">
-                              Nom de champ dans le fichier source
+                              Nom de colonne dans le fichier source
                             </p>
                           </div>
                           <div className="space-y-2">
@@ -359,7 +404,7 @@ export function ConfigurationPanel({ onContinue, detectedFields, fileId, fileNam
                             <p className="text-xs text-slate-500 dark:text-white/60 transition-colors duration-500">
                               Nom du champ dans le JSON de sortie
                             </p>
-                          </div>                    
+                          </div>
                         </div>
 
                         {/* Display value and line number for flat files */}
@@ -416,4 +461,3 @@ export function ConfigurationPanel({ onContinue, detectedFields, fileId, fileNam
     </div>
   )
 }
-

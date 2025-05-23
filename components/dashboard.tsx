@@ -8,6 +8,7 @@ import { ResultsPanel } from "./results-panel"
 import { StatsPanel } from "./stats-panel"
 import { motion, AnimatePresence } from "framer-motion"
 import { Toaster } from "@/components/ui/toaster"
+import type { FlatFieldDefinition } from "./file-uploader"
 
 export default function Dashboard() {
   const [activeSection, setActiveSection] = useState("dashboard")
@@ -15,7 +16,8 @@ export default function Dashboard() {
   const [currentFileId, setCurrentFileId] = useState<number | undefined>(undefined)
   const [currentConfigId, setCurrentConfigId] = useState<number | undefined>(undefined)
   const [currentFileName, setCurrentFileName] = useState<string | undefined>(undefined)
-
+  const [fieldDefinitions, setFieldDefinitions] = useState<FlatFieldDefinition[] | undefined>(undefined)
+  
   // Log des changements d'état pour le débogage
   useEffect(() => {
     console.log("État actuel:", {
@@ -24,19 +26,26 @@ export default function Dashboard() {
       currentFileId,
       currentConfigId,
       currentFileName,
+      fieldDefinitions,
     })
-  }, [activeSection, detectedFields, currentFileId, currentConfigId, currentFileName])
+  }, [activeSection, detectedFields, currentFileId, currentConfigId, currentFileName, fieldDefinitions])
 
   const handleSectionChange = (section: string) => {
     console.log("Changement de section:", section)
     setActiveSection(section)
   }
 
-  const handleFileUploadComplete = (fields: string[], fileId?: number, fileName?: string) => {
-    console.log("Upload terminé:", { fields, fileId, fileName })
+  const handleFileUploadComplete = (
+    fields: string[],
+    fileId?: number,
+    fileName?: string,
+    fieldDefs?: FlatFieldDefinition[],
+  ) => {
+    console.log("Upload terminé:", { fields, fileId, fileName, fieldDefs })
     setDetectedFields(fields)
     setCurrentFileId(fileId)
     setCurrentFileName(fileName)
+    setFieldDefinitions(fieldDefs)
     setActiveSection("configure")
   }
 
@@ -53,6 +62,7 @@ export default function Dashboard() {
     setCurrentFileId(undefined)
     setCurrentConfigId(undefined)
     setCurrentFileName(undefined)
+    setFieldDefinitions(undefined)
   }
 
   return (
@@ -97,6 +107,7 @@ export default function Dashboard() {
                   detectedFields={detectedFields}
                   fileId={currentFileId}
                   fileName={currentFileName}
+                  fieldDefinitions={fieldDefinitions}
                 />
               )}
               {activeSection === "result" && <ResultsPanel onReset={handleReset} configId={currentConfigId} />}
