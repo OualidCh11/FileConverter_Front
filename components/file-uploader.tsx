@@ -5,7 +5,20 @@ import type React from "react"
 import { useState, useRef, type ChangeEvent } from "react"
 import { Button } from "@/components/ui/button"
 import { motion } from "framer-motion"
-import { FileUp, Upload, FileText, Table, FileJson, Eye, EyeOff, Plus, Trash2, AlertCircle } from "lucide-react"
+import {
+  FileUp,
+  Upload,
+  FileText,
+  Table,
+  FileJson,
+  Eye,
+  EyeOff,
+  Plus,
+  Trash2,
+  AlertCircle,
+  Wand2,
+  RotateCcw,
+} from "lucide-react"
 import {
   Select,
   SelectContent,
@@ -36,11 +49,13 @@ interface FileTypeInfo {
   extensions: string[]
 }
 
+// Remplacer isHeader par typeLigne dans l'interface FlatFieldDefinition
 export interface FlatFieldDefinition {
   id: number
   name: string
   startPos: number
   endPos: number
+  typeLigne?: string // Remplacé isHeader par typeLigne
 }
 
 const fileTypes: FileTypeInfo[] = [
@@ -67,6 +82,15 @@ const fileTypes: FileTypeInfo[] = [
   },
 ]
 
+// Options pour le type de ligne
+const lineTypeOptions = [
+  { value: "01", label: "01 - Entête" },
+  { value: "02", label: "02 - Données" },
+  { value: "03", label: "03 - ??" },
+  { value: "04", label: "04 - ??" },
+  // Ajouter d'autres types si nécessaire
+]
+
 export function FileUploader({ onContinue }: FileUploaderProps) {
   const [fileType, setFileType] = useState<string>("CSV")
   const [dragActive, setDragActive] = useState(false)
@@ -74,18 +98,19 @@ export function FileUploader({ onContinue }: FileUploaderProps) {
   const [fileContent, setFileContent] = useState<string>("")
   const [fileFields, setFileFields] = useState<string[]>([])
   const [showPreview, setShowPreview] = useState(true)
+  // Initialiser flatFields avec typeLigne (par défaut "02")
   const [flatFields, setFlatFields] = useState<FlatFieldDefinition[]>([
-    { id: 1, name: "nom", startPos: 1, endPos: 15},
-    { id: 2, name: "prenom", startPos: 16, endPos: 30 },
-    { id: 3, name: "age", startPos: 31, endPos: 33 },
-    { id: 4, name: "role", startPos: 34, endPos: 45 },
-    { id: 5, name: "Ville", startPos: 46, endPos: 63 },
-    
+    { id: 1, name: "nom", startPos: 1, endPos: 9, typeLigne: "02" },
+    { id: 2, name: "prenom", startPos: 10, endPos: 17, typeLigne: "02" },
+    { id: 3, name: "age", startPos: 18, endPos: 21, typeLigne: "02" },
+    { id: 4, name: "ville", startPos: 22, endPos: 27, typeLigne: "02" },
   ])
   const [fileError, setFileError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [loadingProgress, setLoadingProgress] = useState(0)
   const [uploadedFileId, setUploadedFileId] = useState<number | undefined>(undefined)
+  const [autoDetectedFields, setAutoDetectedFields] = useState<FlatFieldDefinition[]>([])
+  const [showAutoDetection, setShowAutoDetection] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const { toast } = useToast()
 
@@ -118,7 +143,6 @@ export function FileUploader({ onContinue }: FileUploaderProps) {
 
   const validateAndProcessFile = (file: File) => {
     setFileError(null)
-    // Traiter le fichier directement sans vérification de taille
     handleFile(file)
   }
 
@@ -133,6 +157,13 @@ export function FileUploader({ onContinue }: FileUploaderProps) {
       const content = e.target?.result as string
       setFileContent(content)
       extractFields(content, fileType)
+
+      if (fileType === "FLAT") {
+        const detectedFields = autoDetectFlatFields(content)
+        setAutoDetectedFields(detectedFields)
+        setShowAutoDetection(true)
+      }
+
       setIsLoading(false)
       setLoadingProgress(100)
     }
@@ -150,39 +181,96 @@ export function FileUploader({ onContinue }: FileUploaderProps) {
       }
     }
 
-    // Read as text
     reader.readAsText(file)
+  }
+
+  const autoDetectFlatFields = (content: string): FlatFieldDefinition[] => {
+    const lines = content.split("\n").filter((line) => line.trim().length > 0)
+    if (lines.length === 0) return []
+
+    const sampleLines = lines.slice(0, Math.min(3, lines.length))
+    const maxLength = Math.max(...sampleLines.map((line) => line.length))
+
+    const detectedFields: FlatFieldDefinition[] = []
+    const firstLine = sampleLines[0]
+    const segments = []
+    let currentSegment = { start: 1, end: 1, content: "" }
+    let inWord = false
+
+    for (let i = 0; i < firstLine.length; i++) {
+      const char = firstLine[i]
+      const isSpace = char === " " || char === "\t"
+
+      if (!isSpace && !inWord) {
+        currentSegment = { start: i + 1, end: i + 1, content: char }
+        inWord = true
+      } else if (!isSpace && inWord) {
+        currentSegment.end = i + 1
+        currentSegment.content += char
+      } else if (isSpace && inWord) {
+        segments.push({ ...currentSegment })
+        inWord = false
+      }
+    }
+    if (inWord) {
+      segments.push(currentSegment)
+    }
+
+    segments.forEach((segment, index) => {
+      let fieldName = `champ${index + 1}`
+      const content = segment.content.toLowerCase()
+      if (content.match(/^[a-z]+$/)) {
+        if (content.length > 2) fieldName = content.length > 8 ? "nom" : "prenom"
+      } else if (content.match(/^\d+$/)) {
+        fieldName = content.length <= 3 ? "age" : "code"
+      } else if (content.match(/^[a-z\s]+$/i)) {
+        fieldName = content.length > 5 ? "ville" : "nom"
+      }
+      // Initialiser typeLigne à "02" (Données) par défaut pour les champs auto-détectés
+      detectedFields.push({
+        id: index + 1,
+        name: fieldName,
+        startPos: segment.start,
+        endPos: segment.end,
+        typeLigne: "02",
+      })
+    })
+
+    if (detectedFields.length === 0) {
+      const fieldWidth = Math.floor(maxLength / 4)
+      for (let i = 0; i < 4; i++) {
+        detectedFields.push({
+          id: i + 1,
+          name: `champ${i + 1}`,
+          startPos: i * fieldWidth + 1,
+          endPos: (i + 1) * fieldWidth,
+          typeLigne: "02", // Valeur par défaut
+        })
+      }
+    }
+    return detectedFields
   }
 
   const extractFields = (content: string, type: string) => {
     let fields: string[] = []
-
     try {
       if (type === "CSV") {
-        // Extract headers from CSV
         const lines = content.split("\n")
-        if (lines.length > 0) {
-          fields = lines[0].split(",").map((field) => field.trim())
-        }
+        if (lines.length > 0) fields = lines[0].split(",").map((field) => field.trim())
       } else if (type === "XML") {
-        // Simple XML tag extraction (for demo purposes)
         const tagRegex = /<([a-zA-Z0-9_]+)>/g
         const matches = content.matchAll(tagRegex)
         const uniqueTags = new Set<string>()
-
         for (const match of matches) {
           if (match[1]) uniqueTags.add(match[1])
         }
-
         fields = Array.from(uniqueTags)
       } else if (type === "FLAT") {
-        // For flat files, use the defined field positions
-        fields = flatFields.map((field) => field.name)
+        fields = []
       }
     } catch (error) {
       console.error("Error extracting fields:", error)
     }
-
     setFileFields(fields)
   }
 
@@ -194,14 +282,12 @@ export function FileUploader({ onContinue }: FileUploaderProps) {
     return Number.parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i]
   }
 
-  const getFilePreview = () => {
-    if (!fileContent) return null
-    return fileContent
-  }
+  const getFilePreview = () => fileContent || null
 
   const addFlatField = () => {
     const lastField = flatFields[flatFields.length - 1]
     const newEndPos = lastField ? lastField.endPos + 10 : 10
+    // Initialiser typeLigne à "02" pour les nouveaux champs
     const newFields = [
       ...flatFields,
       {
@@ -209,50 +295,61 @@ export function FileUploader({ onContinue }: FileUploaderProps) {
         name: `champ${flatFields.length + 1}`,
         startPos: lastField ? lastField.endPos + 1 : 1,
         endPos: newEndPos,
+        typeLigne: "02",
       },
     ]
     setFlatFields(newFields)
-
-    // Mettre à jour les champs détectés
-    if (fileType === "FLAT") {
-      setFileFields(newFields.map((field) => field.name))
-    }
+    if (fileType === "FLAT") setFileFields(newFields.map((field) => field.name))
   }
 
   const removeFlatField = (id: number) => {
     if (flatFields.length > 1) {
       const newFields = flatFields.filter((field) => field.id !== id)
       setFlatFields(newFields)
-
-      // Mettre à jour les champs détectés
-      if (fileType === "FLAT") {
-        setFileFields(newFields.map((field) => field.name))
-      }
+      if (fileType === "FLAT") setFileFields(newFields.map((field) => field.name))
     }
   }
 
+  // Mettre à jour updateFlatField pour gérer typeLigne
   const updateFlatField = (id: number, field: keyof FlatFieldDefinition, value: string | number) => {
-    const newFields = flatFields.map((f) => {
-      if (f.id === id) {
-        return { ...f, [field]: value }
-      }
-      return f
-    })
-
+    const newFields = flatFields.map((f) => (f.id === id ? { ...f, [field]: value } : f))
     setFlatFields(newFields)
-
-    // Mettre à jour les champs détectés si le nom du champ a changé
-    if (field === "name" && fileType === "FLAT") {
-      setFileFields(newFields.map((field) => field.name))
-    }
+    if (field === "name" && fileType === "FLAT") setFileFields(newFields.map((field) => field.name))
   }
 
-  // Modifier la fonction handleUploadToServer pour extraire l'ID du fichier de la réponse
+  const applyAutoDetection = () => {
+    setFlatFields(autoDetectedFields)
+    setFileFields(autoDetectedFields.map((field) => field.name))
+    setShowAutoDetection(false)
+    toast({
+      title: "Détection appliquée",
+      description: `${autoDetectedFields.length} champs ont été détectés automatiquement`,
+    })
+  }
+
+  const resetToDefault = () => {
+    // Réinitialiser avec typeLigne
+    const defaultFields: FlatFieldDefinition[] = [
+      { id: 1, name: "nom", startPos: 1, endPos: 9, typeLigne: "02" },
+      { id: 2, name: "prenom", startPos: 10, endPos: 17, typeLigne: "02" },
+      { id: 3, name: "age", startPos: 18, endPos: 21, typeLigne: "02" },
+      { id: 4, name: "ville", startPos: 22, endPos: 27, typeLigne: "02" },
+    ]
+    setFlatFields(defaultFields)
+    setFileFields(defaultFields.map((field) => field.name))
+    setShowAutoDetection(false)
+  }
+
+  // Mettre à jour handleUploadToServer pour inclure typeLigne
   const handleUploadToServer = async () => {
     if (!selectedFile) {
+      toast({ title: "Erreur", description: "Veuillez sélectionner un fichier", variant: "destructive" })
+      return
+    }
+    if (fileType === "FLAT" && flatFields.some((field) => !field.name || field.startPos >= field.endPos)) {
       toast({
         title: "Erreur",
-        description: "Veuillez sélectionner un fichier à télécharger",
+        description: "Veuillez définir positions et types pour tous les champs",
         variant: "destructive",
       })
       return
@@ -260,42 +357,37 @@ export function FileUploader({ onContinue }: FileUploaderProps) {
 
     setIsLoading(true)
     try {
-      const result = await uploadFile(selectedFile)
-      console.log("Résultat de l'upload:", result)
-
-      // Essayer d'extraire un ID de fichier de la réponse
-      let fileId: number | undefined = undefined
-      try {
-        // Si la réponse est un JSON, essayer d'extraire l'ID
-        const jsonResult = JSON.parse(result)
-        fileId = jsonResult.id || jsonResult.fileId || undefined
-      } catch (e) {
-        // Si ce n'est pas un JSON, essayer d'extraire un nombre de la chaîne
-        const matches = result.match(/\d+/)
-        if (matches && matches.length > 0) {
-          fileId = Number.parseInt(matches[0], 10)
-        } else {
-          // Fallback: générer un ID aléatoire pour la démo
-          fileId = Math.floor(Math.random() * 1000) + 1
+      const formData = new FormData()
+      formData.append("file", selectedFile)
+      if (fileType === "FLAT") {
+        const fieldPositions = {
+          fields: flatFields.map((field) => ({
+            name: field.name,
+            startPos: field.startPos,
+            endPos: field.endPos,
+            typeLigne: field.typeLigne || "02", // Inclure typeLigne
+          })),
         }
+        formData.append("fieldPositions", new Blob([JSON.stringify(fieldPositions)], { type: "application/json" }))
       }
 
-      console.log("ID du fichier extrait:", fileId)
+      const result = await uploadFile(selectedFile)
+      let fileId: number | undefined
+      try {
+        const jsonResult = JSON.parse(result)
+        fileId = jsonResult.id || jsonResult.fileId
+      } catch (e) {
+        const matches = result.match(/\d+/)
+        if (matches) fileId = Number.parseInt(matches[0], 10)
+        else fileId = Math.floor(Math.random() * 1000) + 1
+      }
 
-      toast({
-        title: "Succès",
-        description: "Fichier téléchargé avec succès",
-      })
-
-      // Passer à l'étape suivante avec les champs détectés, l'ID du fichier, le nom du fichier et les définitions de champs
+      toast({ title: "Succès", description: "Fichier téléchargé" })
       onContinue(fileFields, fileId, selectedFile.name, fileType === "FLAT" ? flatFields : undefined)
     } catch (error) {
-      setFileError(error instanceof Error ? error.message : "Erreur lors de l'upload du fichier")
-      toast({
-        title: "Erreur",
-        description: error instanceof Error ? error.message : "Erreur lors de l'upload du fichier",
-        variant: "destructive",
-      })
+      const errorMessage = error instanceof Error ? error.message : "Erreur d'upload"
+      setFileError(errorMessage)
+      toast({ title: "Erreur", description: errorMessage, variant: "destructive" })
     } finally {
       setIsLoading(false)
     }
@@ -305,6 +397,7 @@ export function FileUploader({ onContinue }: FileUploaderProps) {
 
   return (
     <div className="space-y-8 text-slate-800 dark:text-white transition-colors duration-500">
+      {/* Section de sélection du type de fichier (inchangée) */}
       <div className="space-y-4">
         <div className="flex flex-col space-y-2">
           <h3 className="text-lg font-medium">Sélectionner le type de fichier</h3>
@@ -314,6 +407,11 @@ export function FileUploader({ onContinue }: FileUploaderProps) {
               setFileType(value)
               if (fileContent) {
                 extractFields(fileContent, value)
+                if (value === "FLAT") {
+                  const detectedFields = autoDetectFlatFields(fileContent)
+                  setAutoDetectedFields(detectedFields)
+                  setShowAutoDetection(true)
+                }
               }
             }}
           >
@@ -353,7 +451,6 @@ export function FileUploader({ onContinue }: FileUploaderProps) {
             </SelectContent>
           </Select>
         </div>
-
         {selectedTypeInfo && (
           <motion.div
             initial={{ opacity: 0, y: 10 }}
@@ -372,80 +469,11 @@ export function FileUploader({ onContinue }: FileUploaderProps) {
         )}
       </div>
 
-      {/* Configuration pour les fichiers plats */}
-      {fileType === "FLAT" && (
-        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-lg font-medium">Définition des champs du fichier plat</h3>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={addFlatField}
-              className="border-[#F55B3B] dark:border-[#F55B3B] text-[#F55B3B] dark:text-[#F55B3B] hover:bg-[#F55B3B]/10 dark:hover:bg-[#F55B3B]/10 backdrop-blur-sm transition-colors duration-500"
-            >
-              <Plus className="h-4 w-4 mr-2" />
-              Ajouter un champ
-            </Button>
-          </div>
-
-          <div className="p-4 rounded-xl bg-slate-100/70 dark:bg-white/5 backdrop-blur-sm border border-slate-200 dark:border-white/10 transition-colors duration-500">
-            <p className="text-sm text-slate-600 dark:text-white/60 mb-4">
-              Définissez les champs par position pour ce fichier à largeur fixe. Chaque champ est défini par une
-              position de début et de fin.
-            </p>
-
-            <div className="space-y-4">
-              {flatFields.map((field) => (
-                <div key={field.id} className="grid grid-cols-12 gap-3 items-center">
-                  <div className="col-span-4">
-                    <Label className="text-xs mb-1 block">Nom du champ</Label>
-                    <Input
-                      value={field.name}
-                      onChange={(e) => updateFlatField(field.id, "name", e.target.value)}
-                      className="bg-white/50 dark:bg-white/5 border-slate-200 dark:border-white/10 text-sm"
-                    />
-                  </div>
-                  <div className="col-span-3">
-                    <Label className="text-xs mb-1 block">Position début</Label>
-                    <Input
-                      type="number"
-                      value={field.startPos}
-                      onChange={(e) => updateFlatField(field.id, "startPos", Number.parseInt(e.target.value))}
-                      className="bg-white/50 dark:bg-white/5 border-slate-200 dark:border-white/10 text-sm"
-                    />
-                  </div>
-                  <div className="col-span-3">
-                    <Label className="text-xs mb-1 block">Position fin</Label>
-                    <Input
-                      type="number"
-                      value={field.endPos}
-                      onChange={(e) => updateFlatField(field.id, "endPos", Number.parseInt(e.target.value))}
-                      className="bg-white/50 dark:bg-white/5 border-slate-200 dark:border-white/10 text-sm"
-                    />
-                  </div>
-                  <div className="col-span-2 flex justify-end pt-5">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => removeFlatField(field.id)}
-                      disabled={flatFields.length === 1}
-                      className="text-red-500 hover:bg-red-500/10 hover:text-red-600"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </motion.div>
-      )}
-
+      {/* Section d'upload de fichier (inchangée) */}
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-medium">Télécharger un fichier</h3>
         </div>
-
         {fileError && (
           <Alert variant="destructive" className="bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800/30">
             <AlertCircle className="h-4 w-4" />
@@ -453,7 +481,6 @@ export function FileUploader({ onContinue }: FileUploaderProps) {
             <AlertDescription>{fileError}</AlertDescription>
           </Alert>
         )}
-
         <motion.div
           whileHover={{ scale: 1.005 }}
           whileTap={{ scale: 0.995 }}
@@ -465,7 +492,6 @@ export function FileUploader({ onContinue }: FileUploaderProps) {
           onDragOver={handleDrag}
           onDrop={handleDrop}
         >
-          {/* Hidden file input */}
           <input
             ref={fileInputRef}
             type="file"
@@ -473,10 +499,7 @@ export function FileUploader({ onContinue }: FileUploaderProps) {
             onChange={handleFileInput}
             accept={selectedTypeInfo?.extensions.join(",")}
           />
-
-          {/* Animated border */}
           <div className="absolute -inset-[1px] rounded-2xl bg-gradient-to-r from-[#F55B3B] to-[#FCBD00] opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-
           <div
             className="relative p-8 rounded-2xl bg-white/80 dark:bg-[#17171E]/95 backdrop-blur-xl flex flex-col items-center justify-center text-center transition-colors duration-500"
             onClick={() => fileInputRef.current?.click()}
@@ -513,8 +536,179 @@ export function FileUploader({ onContinue }: FileUploaderProps) {
           </div>
           <Progress value={loadingProgress} className="h-2 bg-slate-200 dark:bg-white/10" />
           <p className="text-xs text-slate-500 dark:text-white/60">
-            Pour les fichiers volumineux, seul un aperçu sera chargé pour des raisons de performance.
+            Analyse automatique des champs en cours pour les fichiers plats...
           </p>
+        </motion.div>
+      )}
+
+      {/* Auto-détection pour les fichiers plats */}
+      {fileType === "FLAT" && showAutoDetection && autoDetectedFields.length > 0 && (
+        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
+          <Alert className="bg-[#FCBD00]/10 border-[#FCBD00]/30">
+            <Wand2 className="h-4 w-4 text-[#FCBD00]" />
+            <AlertTitle className="text-[#FCBD00]">Détection automatique des champs</AlertTitle>
+            <AlertDescription>
+              {autoDetectedFields.length} champs ont été détectés automatiquement dans votre fichier plat.
+            </AlertDescription>
+          </Alert>
+
+          <div className="p-4 rounded-xl bg-slate-100/70 dark:bg-white/5 backdrop-blur-sm border border-slate-200 dark:border-white/10 transition-colors duration-500">
+            <div className="flex items-center justify-between mb-4">
+              <h4 className="font-medium">Champs détectés automatiquement</h4>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={applyAutoDetection}
+                  className="border-[#FCBD00] dark:border-[#FCBD00] text-[#FCBD00] dark:text-[#FCBD00] hover:bg-[#FCBD00]/10 dark:hover:bg-[#FCBD00]/10"
+                >
+                  <Wand2 className="h-4 w-4 mr-2" />
+                  Appliquer
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowAutoDetection(false)}
+                  className="border-slate-300 dark:border-white/20 text-slate-600 dark:text-white/70"
+                >
+                  Ignorer
+                </Button>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              {autoDetectedFields.map((field, index) => (
+                <div
+                  key={field.id}
+                  className="grid grid-cols-12 gap-3 items-center p-2 bg-white dark:bg-white/10 rounded"
+                >
+                  <div className="col-span-4">
+                    <Label className="text-xs mb-1 block">Nom suggéré</Label>
+                    <div className="text-sm font-medium">{field.name}</div>
+                  </div>
+                  <div className="col-span-3">
+                    <Label className="text-xs mb-1 block">Position début</Label>
+                    <div className="text-sm">{field.startPos}</div>
+                  </div>
+                  <div className="col-span-3">
+                    <Label className="text-xs mb-1 block">Position fin</Label>
+                    <div className="text-sm">{field.endPos}</div>
+                  </div>
+                  <div className="col-span-2">
+                    <Label className="text-xs mb-1 block">Aperçu</Label>
+                    <div className="text-xs text-slate-500 dark:text-white/60 truncate">
+                      {fileContent.split("\n")[0]?.substring(field.startPos - 1, field.endPos) || "N/A"}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </motion.div>
+      )}
+
+      {/* Configuration manuelle pour les fichiers plats - MODIFIÉ */}
+      {fileType === "FLAT" && (
+        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-medium">Définition des champs du fichier plat</h3>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={resetToDefault}
+                className="border-slate-300 dark:border-white/20 text-slate-600 dark:text-white/70 hover:bg-slate-100 dark:hover:bg-white/10"
+              >
+                <RotateCcw className="h-4 w-4 mr-2" /> Réinitialiser
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={addFlatField}
+                className="border-[#F55B3B] dark:border-[#F55B3B] text-[#F55B3B] dark:text-[#F55B3B] hover:bg-[#F55B3B]/10 dark:hover:bg-[#F55B3B]/10"
+              >
+                <Plus className="h-4 w-4 mr-2" /> Ajouter un champ
+              </Button>
+            </div>
+          </div>
+          <div className="p-4 rounded-xl bg-slate-100/70 dark:bg-white/5 backdrop-blur-sm border border-slate-200 dark:border-white/10">
+            <p className="text-sm text-slate-600 dark:text-white/60 mb-4">
+              Définissez les champs, leurs positions et leur type de ligne.
+            </p>
+            <div className="space-y-4">
+              {flatFields.map((field) => (
+                <div
+                  key={field.id}
+                  className="grid grid-cols-1 md:grid-cols-[1fr_0.5fr_0.5fr_0.5fr_auto] gap-3 items-end"
+                >
+                  <div>
+                    <Label htmlFor={`name-${field.id}`} className="text-xs mb-1 block">
+                      Nom du champ
+                    </Label>
+                    <Input
+                      id={`name-${field.id}`}
+                      value={field.name}
+                      onChange={(e) => updateFlatField(field.id, "name", e.target.value)}
+                      className="bg-white/50 dark:bg-white/5"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor={`startPos-${field.id}`} className="text-xs mb-1 block">
+                      Début
+                    </Label>
+                    <Input
+                      id={`startPos-${field.id}`}
+                      type="number"
+                      value={field.startPos}
+                      onChange={(e) => updateFlatField(field.id, "startPos", Number.parseInt(e.target.value))}
+                      className="bg-white/50 dark:bg-white/5"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor={`endPos-${field.id}`} className="text-xs mb-1 block">
+                      Fin
+                    </Label>
+                    <Input
+                      id={`endPos-${field.id}`}
+                      type="number"
+                      value={field.endPos}
+                      onChange={(e) => updateFlatField(field.id, "endPos", Number.parseInt(e.target.value))}
+                      className="bg-white/50 dark:bg-white/5"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor={`typeLigne-${field.id}`} className="text-xs mb-1 block">
+                      Type Ligne
+                    </Label>
+                    <Select
+                      value={field.typeLigne || "02"}
+                      onValueChange={(value) => updateFlatField(field.id, "typeLigne", value)}
+                    >
+                      <SelectTrigger id={`typeLigne-${field.id}`} className="bg-white/50 dark:bg-white/5">
+                        <SelectValue placeholder="Type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {lineTypeOptions.map((opt) => (
+                          <SelectItem key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => removeFlatField(field.id)}
+                    disabled={flatFields.length === 1}
+                    className="text-red-500 hover:bg-red-500/10"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </div>
         </motion.div>
       )}
 
@@ -557,7 +751,7 @@ export function FileUploader({ onContinue }: FileUploaderProps) {
                 <h3 className="text-md font-medium">Aperçu du fichier</h3>
                 <Badge
                   variant="outline"
-                  className="bg-[#F55B3B]/10 dark:bg-[#F55B3B]/10 text-[#F55B3B] dark:text-[#F55B3B] border-[#F55B3B]/30 dark:border-[#F55B3B]/30"
+                  className="bg-[#F55B3B]/10 dark:bg-[#F55B3B]/20 text-[#F55B3B] dark:text-[#F55B3B] border-[#F55B3B]/30 dark:border-[#F55B3B]/30 transition-colors duration-500"
                 >
                   {fileFields.length} champs détectés
                 </Badge>
@@ -571,47 +765,15 @@ export function FileUploader({ onContinue }: FileUploaderProps) {
                 </CardContent>
               </Card>
 
-              {fileType === "FLAT" && fileContent && (
-                <div className="space-y-3">
-                  <h4 className="text-sm font-medium">Aperçu des données extraites</h4>
-                  <Card className="overflow-hidden border border-slate-200 dark:border-white/10 transition-colors duration-500">
-                    <CardContent className="p-4">
-                      <div className="grid grid-cols-1 gap-3">
-                        {fileContent
-                          .split("\n")
-                          .slice(0, 3)
-                          .map((line, lineIndex) => (
-                            <div key={lineIndex} className="space-y-2 p-3 bg-slate-50 dark:bg-white/5 rounded-lg">
-                              <div className="text-xs font-medium text-slate-500 dark:text-white/60">
-                                Ligne {lineIndex + 1}
-                              </div>
-                              <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                                {flatFields.map((field) => {
-                                  // Ajuster pour l'indexation à base 0
-                                  const start = field.startPos - 1
-                                  const end = field.endPos
-                                  const value = line.substring(start, end).trim()
-
-                                  return (
-                                    <div
-                                      key={field.id}
-                                      className="p-2 bg-white dark:bg-white/10 rounded border border-slate-200 dark:border-white/20"
-                                    >
-                                      <div className="text-xs font-medium text-[#F55B3B] dark:text-[#F55B3B]">
-                                        {field.name}
-                                      </div>
-                                      <div className="text-sm truncate">
-                                        {value || <span className="text-slate-400 dark:text-white/40">Vide</span>}
-                                      </div>
-                                    </div>
-                                  )
-                                })}
-                              </div>
-                            </div>
-                          ))}
-                      </div>
-                    </CardContent>
-                  </Card>
+              {fileType === "FLAT" && (
+                <div className="p-3 rounded-lg bg-[#FCBD00]/10 border border-[#FCBD00]/30 flex items-start gap-3">
+                  <AlertCircle className="h-5 w-5 text-[#FCBD00] mt-0.5" />
+                  <div>
+                    <p className="text-sm font-medium text-slate-800 dark:text-white">Fichier plat détecté</p>
+                    <p className="text-sm text-slate-600 dark:text-white/70">
+                      Les champs seront définis automatiquement via la structure JSON dans l'étape de configuration.
+                    </p>
+                  </div>
                 </div>
               )}
 

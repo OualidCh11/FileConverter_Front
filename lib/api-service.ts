@@ -12,6 +12,7 @@ export interface FileEntity {
 
 export interface FileDetail {
   id: number
+  // id: number // Duplicate id property removed
   nrLines: number
   contentFile: string
   statut: "AT" | "RE" | "TR"
@@ -22,7 +23,7 @@ export interface FileDetail {
 export interface ConfigMapping {
   id: number
   fileSource: string
-  fileDestinqtionJson: string
+  fileDestinqtionJson: string // Typo: fileDestinationJson
   status: "AT" | "RE" | "TR"
   localDateTime: string
   fileEntities?: FileEntity[]
@@ -34,13 +35,15 @@ export interface ConfigMappingDetail {
   nrLineFiles: number
   keySource: string
   typeFile: string
-  keyDistination: string
-  valueDistination: string
+  keyDistination: string // Typo: keyDestination
+  valueDistination: string // Typo: valueDestination
   startPos: number
   endPos: number
   configMapping?: ConfigMapping
   fileDetail?: FileDetail
   outMappings?: OutMapping[]
+  typeLigneSource?: string // Added for source line type
+  typeLigneDestination?: string // Added for destination line type
 }
 
 export interface OutMapping {
@@ -57,6 +60,7 @@ export interface JsonStructure {
   dateCreated: string
   start_position?: number
   end_position?: number
+  typeLigne?: string // Added for JSON key line type
 }
 
 export interface MappingDTO {
@@ -66,19 +70,22 @@ export interface MappingDTO {
 export interface ConfigMappingDTO {
   keySource: string
   typeFile: string
-  keyDistination: string
+  keyDistination: string // Typo: keyDestination
   startPos: number
   endPos: number
   nrLineFiles?: number
   configMappingId?: number
   fileDetailId?: number
+  typeLigneSource?: string // Added for source line type
+  typeLigneDestination?: string // Added for destination line type
 }
 
 // Types pour l'upload de structure JSON
 export interface PositionJsonDto {
   keyPayh: string // Note: le backend utilise "keyPayh" avec une faute de frappe
-  start_position: number
-  end_position: number
+  start_position?: number
+  end_position?: number
+  typeLigne?: string // Added for JSON key line type
 }
 
 export interface JsonUploadRequest {
@@ -112,7 +119,7 @@ export async function uploadFile(file: File): Promise<string> {
   }
 }
 
-// Service pour uploader un fichier JSON de structure avec positions
+// Service pour uploader un fichier JSON de structure avec positions et types de ligne
 export async function uploadJsonStructureWithPositions(file: File, metadata: JsonUploadRequest): Promise<string> {
   try {
     const formData = new FormData()
@@ -120,6 +127,7 @@ export async function uploadJsonStructureWithPositions(file: File, metadata: Jso
     formData.append("metadata", new Blob([JSON.stringify(metadata)], { type: "application/json" }))
 
     const response = await fetch(`${API_BASE_URL}/api/json-keys/saveKeys-withPosition`, {
+      // Assuming this endpoint can handle typeLigne
       method: "POST",
       body: formData,
     })
@@ -136,13 +144,15 @@ export async function uploadJsonStructureWithPositions(file: File, metadata: Jso
   }
 }
 
-// Service pour uploader un fichier JSON de structure (ancien endpoint)
+// Service pour uploader un fichier JSON de structure (ancien endpoint) - Potentially deprecate or update
 export async function uploadJsonStructureFile(file: File, fileDestination: string): Promise<string> {
   try {
     const formData = new FormData()
     formData.append("file", file)
     formData.append("fileDestination", fileDestination)
 
+    // This old endpoint might not support typeLigne for JSON keys.
+    // For now, it's kept as is, but ideally, it should be updated or new logic should use uploadJsonStructureWithPositions
     const response = await fetch(`${API_BASE_URL}/api/json-structure/upload`, {
       method: "POST",
       body: formData,
@@ -160,7 +170,7 @@ export async function uploadJsonStructureFile(file: File, fileDestination: strin
   }
 }
 
-// Service pour récupérer les structures JSON par destination
+// Service pour récupérer les structures JSON par destination (should now include typeLigne)
 export async function getJsonStructuresByDestination(fileDestination: string): Promise<JsonStructure[]> {
   try {
     const response = await fetch(
@@ -178,7 +188,7 @@ export async function getJsonStructuresByDestination(fileDestination: string): P
       throw new Error(errorText || "Erreur lors de la récupération des structures JSON")
     }
 
-    const structures = await response.json()
+    const structures: JsonStructure[] = await response.json() // Assuming backend returns typeLigne
     console.log("Structures récupérées depuis l'API:", structures)
     return structures
   } catch (error) {
@@ -210,7 +220,7 @@ export async function getAllJsonDestinations(): Promise<string[]> {
   }
 }
 
-// Service pour récupérer les clés de structure JSON (ancien endpoint)
+// Service pour récupérer les clés de structure JSON (ancien endpoint) - Potentially deprecate or update
 export async function getJsonStructureKeys(fileDestination: string): Promise<string[]> {
   try {
     const response = await fetch(
@@ -229,6 +239,8 @@ export async function getJsonStructureKeys(fileDestination: string): Promise<str
     }
 
     const jsonStructures: JsonStructure[] = await response.json()
+    // This returns only keyPath, not the full structure with typeLigne.
+    // Consider returning JsonStructure[] if typeLigne is needed here.
     return jsonStructures.map((structure) => structure.keyPath)
   } catch (error) {
     console.error("Erreur lors de la récupération des clés de structure:", error)
@@ -374,7 +386,7 @@ export async function getJsonFileContent(fileName: string): Promise<string> {
     if (generationResponse.ok) {
       const responseText = await generationResponse.text()
       // Essayer d'extraire le JSON de la réponse
-      const jsonMatch = responseText.match(/\[.*\]/s)
+      const jsonMatch = responseText.match(/\[[\s\S]*\]/)
       if (jsonMatch) {
         return jsonMatch[0]
       }

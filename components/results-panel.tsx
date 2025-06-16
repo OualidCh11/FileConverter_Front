@@ -12,6 +12,7 @@ import {
   FileJson,
   ChevronDown,
   ChevronRight,
+  ArrowRight,
 } from "lucide-react"
 import { motion } from "framer-motion"
 import { useToast } from "@/hooks/use-toast"
@@ -30,6 +31,7 @@ export function ResultsPanel({ onReset, configId, fileName }: ResultsPanelProps)
   const [error, setError] = useState<string | null>(null)
   const [recordCount, setRecordCount] = useState<number>(0)
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set())
+  const [showMappingExample, setShowMappingExample] = useState(true)
   const { toast } = useToast()
 
   // Charger les résultats de conversion
@@ -38,8 +40,8 @@ export function ResultsPanel({ onReset, configId, fileName }: ResultsPanelProps)
       if (!configId) {
         // Utiliser des données de démo si aucun ID de configuration n'est fourni
         setTimeout(() => {
-          setJsonResult(sampleComplexJsonResult)
-          setRecordCount(3) // Nombre d'enregistrements dans l'exemple
+          setJsonResult(sampleMappedJsonResult)
+          setRecordCount(2) // Nombre d'enregistrements dans l'exemple
           setIsLoading(false)
         }, 1000)
         return
@@ -60,7 +62,7 @@ export function ResultsPanel({ onReset, configId, fileName }: ResultsPanelProps)
             parsedJson = JSON.parse(jsonContent)
           } catch (e) {
             // Si ça échoue, essayer de parser en extrayant le JSON de la réponse
-            const jsonMatch = jsonContent.match(/\[.*\]/s)
+            const jsonMatch = jsonContent.match(/\[[\s\S]*\]/)
             if (jsonMatch) {
               parsedJson = JSON.parse(jsonMatch[0])
             } else {
@@ -94,8 +96,8 @@ export function ResultsPanel({ onReset, configId, fileName }: ResultsPanelProps)
         setError(error instanceof Error ? error.message : "Erreur lors du chargement des résultats")
 
         // Utiliser des données de démo en cas d'erreur
-        setJsonResult(sampleComplexJsonResult)
-        setRecordCount(3) // Nombre d'enregistrements dans l'exemple
+        setJsonResult(sampleMappedJsonResult)
+        setRecordCount(2) // Nombre d'enregistrements dans l'exemple
 
         toast({
           title: "Erreur",
@@ -110,122 +112,47 @@ export function ResultsPanel({ onReset, configId, fileName }: ResultsPanelProps)
     loadResults()
   }, [configId, fileName, toast])
 
-  // Sample JSON result avec la structure complexe
-  const sampleComplexJsonResult = `[
-  {
-    "info1a": "John Doe",
-    "info1b": "35",
-    "info1c": "Paris",
-    "info1d": "Manager",
-    "info1e": "2023-01-15",
-    "info1f": "Active",
-    "info1g": "Premium",
-    "info2": [
-      {
-        "info2.1": {
-          "info": "Contact Principal",
-          "info2": "john.doe@email.com",
-          "info3": "+33123456789",
-          "info4": "Professionnel",
-          "info5": "Préféré"
-        },
-        "info2.2": {
-          "info": "Adresse",
-          "info2": "123 Rue de la Paix",
-          "info3": "75001",
-          "info4": "Paris"
-        },
-        "info2.3": {
-          "info": "Informations Financières",
-          "info2": "EUR",
-          "info3": "15000.50",
-          "info4": "Compte Courant",
-          "info5": "FR7612345678901234567890",
-          "info6": "BNP Paribas",
-          "info7": "BNPAFRPP",
-          "info8": "2025-12-31",
-          "info9": "Actif",
-          "info10": "Niveau 3"
-        }
-      }
-    ]
-  },
-  {
-    "info1a": "Jane Smith",
-    "info1b": "28",
-    "info1c": "London",
-    "info1d": "Developer",
-    "info1e": "2023-02-20",
-    "info1f": "Active",
-    "info1g": "Standard",
-    "info2": [
-      {
-        "info2.1": {
-          "info": "Contact Principal",
-          "info2": "jane.smith@email.com",
-          "info3": "+44987654321",
-          "info4": "Personnel",
-          "info5": "Standard"
-        },
-        "info2.2": {
-          "info": "Adresse",
-          "info2": "456 Baker Street",
-          "info3": "NW1 6XE",
-          "info4": "London"
-        },
-        "info2.3": {
-          "info": "Informations Financières",
-          "info2": "GBP",
-          "info3": "8750.25",
-          "info4": "Compte Épargne",
-          "info5": "GB82WEST12345698765432",
-          "info6": "Barclays",
-          "info7": "BARCGB22",
-          "info8": "2024-06-30",
-          "info9": "Actif",
-          "info10": "Niveau 2"
-        }
-      }
-    ]
-  },
-  {
-    "info1a": "Bob Johnson",
-    "info1b": "42",
-    "info1c": "New York",
-    "info1d": "Director",
-    "info1e": "2023-03-10",
-    "info1f": "Active",
-    "info1g": "VIP",
-    "info2": [
-      {
-        "info2.1": {
-          "info": "Contact Principal",
-          "info2": "bob.johnson@email.com",
-          "info3": "+1234567890",
-          "info4": "Professionnel",
-          "info5": "VIP"
-        },
-        "info2.2": {
-          "info": "Adresse",
-          "info2": "789 Fifth Avenue",
-          "info3": "10022",
-          "info4": "New York"
-        },
-        "info2.3": {
-          "info": "Informations Financières",
-          "info2": "USD",
-          "info3": "42500.75",
-          "info4": "Compte Premium",
-          "info5": "US1234567890123456789012",
-          "info6": "Chase Bank",
-          "info7": "CHASUS33",
-          "info8": "2026-03-15",
-          "info9": "Actif",
-          "info10": "Niveau 5"
-        }
-      }
-    ]
-  }
+  // Exemple de résultat avec mapping nom -> name
+  const sampleMappedJsonResult = `[
+  [
+    {
+        "senderApplication": "",
+        "executionDate": "",
+        "creReference": "",
+        "eventCode": "",
+        "productCode": "",
+        "subEventCode": "",
+        "operationNumber": "",
+        "sopOperations": [
+            {
+                "operationInfo": {
+                    "operationID": "",
+                    "operationDate": "",
+                    "preferentialValueDate": "",
+                    "operationType": "",
+                    "amount": ""
+                },
+                "accountHolderInfo": {
+                    "accountCurrency": "",
+                    "accountHolderName": "",
+                    "accountHolder": "",
+                    "accountHolderBicCode": ""
+                },
+                "additionalsInfo": {
+                    "channelReference": "",
+                    "clearingReference": "",
+                    "endToEndReference": "",
+                    "theirReference": "",
+                    "intradayReference": "",
+                    "channel": "",
+                    "productId": "",
+                    "clientCategory": "",
+                    "applicant": "",
+                    "paydet": ""
+                }
+            }
+        ]
+    }
 ]`
 
   const toggleSection = (sectionId: string) => {
@@ -286,7 +213,8 @@ export function ResultsPanel({ onReset, configId, fileName }: ResultsPanelProps)
                 className="w-full p-3 bg-slate-50 dark:bg-white/5 hover:bg-slate-100 dark:hover:bg-white/10 flex items-center justify-between transition-colors duration-200"
               >
                 <span className="font-medium text-slate-800 dark:text-white">
-                  Enregistrement {index + 1} - {record.info1a || `Record ${index + 1}`}
+                  Enregistrement {index + 1}
+                  {record.info2?.[0]?.["info2.1"]?.name && ` - ${record.info2[0]["info2.1"].name}`}
                 </span>
                 {expandedSections.has(`record-${index}`) ? (
                   <ChevronDown className="h-4 w-4 text-slate-600 dark:text-white/60" />
@@ -309,19 +237,21 @@ export function ResultsPanel({ onReset, configId, fileName }: ResultsPanelProps)
                       return (
                         <div key={key} className="p-2 bg-slate-50 dark:bg-white/5 rounded">
                           <div className="text-xs font-medium text-slate-500 dark:text-white/60">{key}</div>
-                          <div className="text-sm text-slate-800 dark:text-white">{value as string}</div>
+                          <div className="text-sm text-slate-800 dark:text-white">
+                            {(value as string) || <span className="text-slate-400 italic">Vide</span>}
+                          </div>
                         </div>
                       )
                     })}
                   </div>
 
-                  {/* Section info2 */}
+                  {/* Section info2 avec données mappées */}
                   {record.info2 && Array.isArray(record.info2) && (
                     <div className="space-y-3">
-                      <h4 className="font-medium text-slate-800 dark:text-white">Informations détaillées</h4>
-                      {record.info2.map((info2Item, info2Index) => (
+                      <h4 className="font-medium text-slate-800 dark:text-white">Données mappées (info2)</h4>
+                      {record.info2.map((info2Item: any, info2Index: number) => (
                         <div key={info2Index} className="space-y-3 p-3 bg-slate-50 dark:bg-white/5 rounded-lg">
-                          {Object.entries(info2Item).map(([sectionKey, sectionValue]) => (
+                          {Object.entries(info2Item as Record<string, any>).map(([sectionKey, sectionValue]) => (
                             <div key={sectionKey} className="space-y-2">
                               <button
                                 onClick={() => toggleSection(`record-${index}-${sectionKey}`)}
@@ -329,6 +259,11 @@ export function ResultsPanel({ onReset, configId, fileName }: ResultsPanelProps)
                               >
                                 <span className="font-medium text-sm text-slate-700 dark:text-white/90">
                                   {sectionKey}
+                                  {sectionKey === "info2.1" && (
+                                    <span className="ml-2 text-xs text-[#F55B3B] bg-[#F55B3B]/10 px-2 py-1 rounded">
+                                      Données mappées
+                                    </span>
+                                  )}
                                 </span>
                                 {expandedSections.has(`record-${index}-${sectionKey}`) ? (
                                   <ChevronDown className="h-3 w-3 text-slate-500 dark:text-white/50" />
@@ -344,12 +279,29 @@ export function ResultsPanel({ onReset, configId, fileName }: ResultsPanelProps)
                                   exit={{ opacity: 0, height: 0 }}
                                   className="grid grid-cols-1 md:grid-cols-2 gap-2 p-2 bg-white dark:bg-white/10 rounded"
                                 >
-                                  {Object.entries(sectionValue as Record<string, string>).map(([subKey, subValue]) => (
+                                  {Object.entries(sectionValue as Record<string, any>).map(([subKey, subValue]) => (
                                     <div key={subKey} className="p-2 bg-slate-50 dark:bg-white/5 rounded">
-                                      <div className="text-xs font-medium text-slate-500 dark:text-white/60">
+                                      <div className="text-xs font-medium text-slate-500 dark:text-white/60 flex items-center gap-2">
                                         {subKey}
+                                        {subKey === "name" && (
+                                          <span className="text-[#FCBD00] bg-[#FCBD00]/10 px-1 py-0.5 rounded text-xs">
+                                            mappé depuis "nom"
+                                          </span>
+                                        )}
+                                        {subKey === "firstName" && (
+                                          <span className="text-[#FCBD00] bg-[#FCBD00]/10 px-1 py-0.5 rounded text-xs">
+                                            mappé depuis "prenom"
+                                          </span>
+                                        )}
+                                        {subKey === "city" && (
+                                          <span className="text-[#FCBD00] bg-[#FCBD00]/10 px-1 py-0.5 rounded text-xs">
+                                            mappé depuis "ville"
+                                          </span>
+                                        )}
                                       </div>
-                                      <div className="text-sm text-slate-800 dark:text-white">{subValue}</div>
+                                      <div className="text-sm text-slate-800 dark:text-white">
+                                        {String(subValue) || <span className="text-slate-400 italic">Vide</span>}
+                                      </div>
                                     </div>
                                   ))}
                                 </motion.div>
@@ -424,6 +376,63 @@ export function ResultsPanel({ onReset, configId, fileName }: ResultsPanelProps)
           </Button>
         </div>
       </div>
+
+      {/* Exemple de mapping */}
+      {showMappingExample && (
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="p-4 rounded-lg bg-gradient-to-r from-[#FCBD00]/10 to-[#F55B3B]/10 border border-[#FCBD00]/30"
+        >
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="font-medium text-slate-800 dark:text-white">Exemple de mapping appliqué</h3>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowMappingExample(false)}
+              className="text-slate-500 hover:text-slate-700"
+            >
+              ×
+            </Button>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <h4 className="text-sm font-medium text-slate-700 dark:text-white/90">Données source</h4>
+              <div className="p-3 bg-white dark:bg-white/10 rounded border">
+                <div className="text-xs font-mono">
+                  <div>nom: "John Doe"</div>
+                  <div>prenom: "John"</div>
+                  <div>age: "35"</div>
+                  <div>ville: "Paris"</div>
+                </div>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <h4 className="text-sm font-medium text-slate-700 dark:text-white/90">Résultat mappé</h4>
+              <div className="p-3 bg-white dark:bg-white/10 rounded border">
+                <div className="text-xs font-mono">
+                  <div className="flex items-center gap-2">
+                    <span>name: "John Doe"</span>
+                    <ArrowRight className="h-3 w-3 text-[#FCBD00]" />
+                    <span className="text-[#FCBD00] text-xs">mappé depuis "nom"</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span>firstName: "John"</span>
+                    <ArrowRight className="h-3 w-3 text-[#FCBD00]" />
+                    <span className="text-[#FCBD00] text-xs">mappé depuis "prenom"</span>
+                  </div>
+                  <div>age: "35"</div>
+                  <div className="flex items-center gap-2">
+                    <span>city: "Paris"</span>
+                    <ArrowRight className="h-3 w-3 text-[#FCBD00]" />
+                    <span className="text-[#FCBD00] text-xs">mappé depuis "ville"</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </motion.div>
+      )}
 
       {fileName && (
         <div className="p-3 rounded-lg bg-[#FCBD00]/10 border border-[#FCBD00]/30 flex items-start gap-3">

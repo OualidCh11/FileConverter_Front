@@ -465,7 +465,7 @@ export function ConfigurationPanel({
   const loadExistingStructures = async () => {
     try {
       // Appeler l'API pour récupérer toutes les structures existantes
-      const response = await fetch(`/api/json-keys/getAllDestinations`)
+      const response = await fetch(`/api/json-keys/getAllFileDestinations`)
       if (response.ok) {
         const structures = await response.json()
         setExistingStructures(structures)

@@ -7,6 +7,7 @@ import { ConfigurationPanel } from "./configuration-panel"
 import { ResultsPanel } from "./results-panel"
 import { StatsPanel } from "./stats-panel"
 import { motion, AnimatePresence } from "framer-motion"
+import JsonToFlatConverter from "./json-to-flat-converter" // Import the new component
 import { Toaster } from "@/components/ui/toaster"
 import type { FlatFieldDefinition } from "./file-uploader"
 
@@ -17,7 +18,7 @@ export default function Dashboard() {
   const [currentConfigId, setCurrentConfigId] = useState<number | undefined>(undefined)
   const [currentFileName, setCurrentFileName] = useState<string | undefined>(undefined)
   const [fieldDefinitions, setFieldDefinitions] = useState<FlatFieldDefinition[] | undefined>(undefined)
-  
+
   // Log des changements d'état pour le débogage
   useEffect(() => {
     console.log("État actuel:", {
@@ -81,12 +82,14 @@ export default function Dashboard() {
             {activeSection === "upload" && "Téléchargement de fichier"}
             {activeSection === "configure" && "Configuration"}
             {activeSection === "result" && "Résultat de conversion"}
+            {activeSection === "json-to-flat" && "Conversion JSON vers Fichier Plat"}
           </h2>
           <p className="text-slate-600 dark:text-white/60 text-sm mt-1 transition-colors duration-500">
             {activeSection === "dashboard" && "Visualisez les statistiques et les conversions récentes"}
             {activeSection === "upload" && "Téléchargez votre fichier pour commencer la conversion"}
             {activeSection === "configure" && "Configurez les paramètres de mappage"}
             {activeSection === "result" && "Visualisez et téléchargez votre fichier converti"}
+            {activeSection === "json-to-flat" && "Configurez la conversion de votre fichier JSON en fichier plat"}
           </p>
         </div>
 
@@ -111,6 +114,7 @@ export default function Dashboard() {
                 />
               )}
               {activeSection === "result" && <ResultsPanel onReset={handleReset} configId={currentConfigId} />}
+              {activeSection === "json-to-flat" && <JsonToFlatConverter />}
             </motion.div>
           </AnimatePresence>
         </div>

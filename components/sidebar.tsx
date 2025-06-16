@@ -3,7 +3,7 @@
 import type React from "react"
 
 import { motion } from "framer-motion"
-import { BarChart3, FileUp, Settings, FileJson } from "lucide-react"
+import { BarChart3, FileUp, Settings, FileJson, ArrowRightLeft } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 interface SidebarProps {
@@ -39,6 +39,11 @@ export function Sidebar({ activeSection, onSectionChange }: SidebarProps) {
       label: "Résultat",
       icon: FileJson,
     },
+    {
+      id: "json-to-flat",
+      label: "JSON -> Plat",
+      icon: ArrowRightLeft,
+    },
   ]
 
   return (
@@ -49,9 +54,7 @@ export function Sidebar({ activeSection, onSectionChange }: SidebarProps) {
             <div className="h-8 w-8 bg-gradient-to-br from-[#F55B3B] to-[#ff7b5b] rounded-lg shadow-lg shadow-[#F55B3B]/25 animate-pulse transition-colors duration-500" />
             <div className="h-8 w-8 bg-gradient-to-br from-[#FCBD00] to-[#ffd747] rounded-lg shadow-lg shadow-[#FCBD00]/25 animate-pulse delay-700 transition-colors duration-500" />
           </div>
-            <h3 className="font-semibold text-slate-800 dark:text-white transition-colors duration-500">
-              Passe-Partout JSON
-            </h3>        
+          <h3 className="font-semibold text-slate-800 dark:text-white transition-colors duration-500">JsonForm</h3>
         </div>
 
         <nav className="space-y-2">
@@ -78,6 +81,21 @@ export function Sidebar({ activeSection, onSectionChange }: SidebarProps) {
             </button>
           ))}
         </nav>
+      </div>
+
+      <div className="mt-auto p-4">
+        <div className="p-4 rounded-xl bg-gradient-to-r from-[#F55B3B]/10 to-[#FCBD00]/10 backdrop-blur-sm border border-[#F55B3B]/30 transition-colors duration-500">
+          <h4 className="font-medium text-slate-800 dark:text-white mb-2">Besoin d'aide ?</h4>
+          <p className="text-sm text-slate-600 dark:text-white/70 mb-3">
+            Consultez notre documentation pour obtenir des conseils sur l'utilisation du convertisseur de fichiers.
+          </p>
+          <a
+            href="#"
+            className="text-sm font-medium text-[#F55B3B] hover:text-[#ff7b5b] transition-colors duration-300"
+          >
+            Voir la documentation →
+          </a>
+        </div>
       </div>
     </div>
   )

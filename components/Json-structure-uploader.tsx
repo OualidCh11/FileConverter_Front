@@ -1,176 +1,140 @@
-"use client"
-
 import type React from "react"
 
-import { useState, useRef, useEffect } from "react"
+import { useState, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { motion, AnimatePresence } from "framer-motion"
-import {
-  Upload,
-  FileJson,
-  AlertCircle,
-  Trash2,
-  Plus,
-  Eye,
-  EyeOff,
-  Save,
-  Loader2,
-  Check,
-  RefreshCw,
-  Wand2,
-} from "lucide-react"
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectLabel,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
+import { Upload, FileJson, AlertCircle, Trash2, Plus, Eye, EyeOff, Save, Loader2, Wand2 } from "lucide-react"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useToast } from "@/hooks/use-toast"
+import { uploadJsonStructureWithPositions } from "@/lib/api-service" 
+import type { JsonUploadRequest } from "@/lib/api-service" 
+
+const lineTypeOptions = [
+  { value: "01", label: "01 - Entête" },
+  { value: "02", label: "02 - Données" },
+  { value: "03", label: "03 - Total" },
+  { value: "04", label: "04 - Pied" },
+]
 
 interface JsonKey {
   id: string
   keyPath: string
-  startPosition: number
-  endPosition: number
+  typeLigne?: string
 }
 
 interface JsonStructureUploaderProps {
-  onComplete?: (fileDestination: string) => void
+  onComplete?: (fileDestination: string, uploadedKeys?: JsonKey[]) => void 
   defaultFileDestination?: string
 }
 
 export function JsonStructureUploader({ onComplete, defaultFileDestination }: JsonStructureUploaderProps) {
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [jsonContent, setJsonContent] = useState<string>("")
-  const [extractedKeys, setExtractedKeys] = useState<string[]>([])
-  const [jsonKeys, setJsonKeys] = useState<JsonKey[]>([])
+  const [extractedKeys, setExtractedKeys] = useState<string[]>([]) // Clés brutes extraites du JSON
+  const [jsonKeys, setJsonKeys] = useState<JsonKey[]>([]) // Clés configurables avec positions et type de ligne
   const [fileDestination, setFileDestination] = useState(defaultFileDestination || "")
   const [showPreview, setShowPreview] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [autoDetectPositions, setAutoDetectPositions] = useState(true)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const { toast } = useToast()
 
-  // Fonction pour extraire les clés d'un objet JSON de manière récursive
-  const extractJsonKeys = (obj: any, prefix = ""): string[] => {
+  const extractJsonKeysRecursive = (obj: any, prefix = "", depth = 0): string[] => {
     const keys: string[] = []
+    const maxDepth = 10
+    if (depth > maxDepth) return keys
 
     if (typeof obj === "object" && obj !== null) {
-      // Si c'est un tableau, analyser le premier élément
       if (Array.isArray(obj)) {
+        if (prefix) keys.push(prefix)
         if (obj.length > 0 && typeof obj[0] === "object" && obj[0] !== null) {
-          keys.push(...extractJsonKeys(obj[0], prefix ? `${prefix}[0]` : "[0]"))
+          const arrayItemPrefix = prefix ? `${prefix}[0]` : "[0]"
+          keys.push(...extractJsonKeysRecursive(obj[0], arrayItemPrefix, depth + 1))
         }
       } else {
-        // Si c'est un objet, analyser toutes les clés
+        // if (prefix) keys.push(prefix) // Optionnel: inclure les objets parents comme clés
         Object.keys(obj).forEach((key) => {
           const fullKey = prefix ? `${prefix}.${key}` : key
           keys.push(fullKey)
-
           if (typeof obj[key] === "object" && obj[key] !== null) {
-            keys.push(...extractJsonKeys(obj[key], fullKey))
+            keys.push(...extractJsonKeysRecursive(obj[key], fullKey, depth + 1))
           }
         })
       }
     }
-
-    return keys
+    return Array.from(new Set(keys)) // Assurer l'unicité
   }
 
-  // Fonction pour utiliser toutes les clés détectées avec positions auto-générées
+  // Mettre à jour generateSmartPositions pour inclure typeLigne (par défaut "02")
+  const generateSmartPositions = (keys: string[]): JsonKey[] => {
+    return keys.map((key, index) => {
+      return {
+        id: `key-${index}-${Date.now()}`,
+        keyPath: key,
+        typeLigne: "02", // Type de ligne par défaut pour les clés JSON
+      }
+    })
+  }
+
   const useAllDetectedKeys = () => {
     if (extractedKeys.length === 0) {
-      toast({
-        title: "Aucune clé détectée",
-        description: "Veuillez d'abord uploader un fichier JSON valide",
-        variant: "destructive",
-      })
+      toast({ title: "Aucune clé détectée", variant: "destructive" })
       return
     }
-
-    const allKeys: JsonKey[] = extractedKeys.map((key, index) => ({
-      id: `key-${index}`,
-      keyPath: key,
-      startPosition: index * 10 + 1,
-      endPosition: index * 10 + 10,
-    }))
-    setJsonKeys(allKeys)
-
+    const allKeysConfigured = generateSmartPositions(extractedKeys)
+    setJsonKeys(allKeysConfigured)
     toast({
-      title: "Toutes les clés appliquées",
-      description: `${allKeys.length} clés ont été configurées automatiquement avec positions`,
+      title: "Toutes les clés détectées appliquées",
+      description: `${allKeysConfigured.length} clés configurées.`,
     })
+  }
+
+  const getOrganizedKeys = () => {
+    const groups: { [key: string]: string[] } = {}
+    extractedKeys.forEach((key) => {
+      const firstSegment = key.split(".")[0]
+      if (!groups[firstSegment]) groups[firstSegment] = []
+      groups[firstSegment].push(key)
+    })
+    return groups
   }
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (!file) return
-
     if (!file.name.endsWith(".json")) {
-      setError("Veuillez sélectionner un fichier JSON valide")
+      setError("Veuillez sélectionner un fichier JSON.")
       return
     }
-
     setSelectedFile(file)
     setError(null)
-
     const reader = new FileReader()
     reader.onload = (e) => {
       try {
         const content = e.target?.result as string
         setJsonContent(content)
-
-        // Parser et extraire les clés
         const parsedJson = JSON.parse(content)
-        const keys = extractJsonKeys(parsedJson)
+        const keys = extractJsonKeysRecursive(parsedJson)
         setExtractedKeys(keys)
-
-        // Réinitialiser les clés configurées
-        setJsonKeys([])
-
-        if (keys.length > 0) {
-          toast({
-            title: "Fichier analysé",
-            description: `${keys.length} clés détectées dans le fichier JSON`,
-          })
-        } else {
-          toast({
-            title: "Attention",
-            description: "Aucune clé détectée dans le fichier JSON. Vérifiez le format.",
-            variant: "destructive",
-          })
-        }
-      } catch (error) {
-        setError("Erreur lors de l'analyse du fichier JSON")
-        console.error("Erreur de parsing JSON:", error)
+        setJsonKeys(generateSmartPositions(keys)) // Pré-remplir avec positions et types par défaut
+        toast({ title: "Fichier analysé", description: `${keys.length} clés uniques détectées.` })
+      } catch (parseError) {
+        setError("Erreur d'analyse JSON.")
+        console.error("JSON parse error:", parseError)
       }
     }
-
-    reader.onerror = () => {
-      setError("Erreur lors de la lecture du fichier")
-    }
-
+    reader.onerror = () => setError("Erreur de lecture du fichier.")
     reader.readAsText(file)
   }
 
+  // Mettre à jour updateJsonKey pour gérer typeLigne
   const updateJsonKey = (id: string, field: keyof JsonKey, value: string | number) => {
-    setJsonKeys((prev) =>
-      prev.map((key) => {
-        if (key.id === id) {
-          return { ...key, [field]: value }
-        }
-        return key
-      }),
-    )
+    setJsonKeys((prev) => prev.map((key) => (key.id === id ? { ...key, [field]: value } : key)))
   }
 
   const removeJsonKey = (id: string) => {
@@ -178,93 +142,30 @@ export function JsonStructureUploader({ onComplete, defaultFileDestination }: Js
   }
 
   const addJsonKey = () => {
+    // Permet d'ajouter une clé manuellement si nécessaire
     const newKey: JsonKey = {
-      id: `key-${Date.now()}`,
+      id: `key-manual-${Date.now()}`,
       keyPath: "",
-      startPosition: 1,
-      endPosition: 10,
+      typeLigne: "02", // Type par défaut
     }
     setJsonKeys((prev) => [...prev, newKey])
   }
 
-  // Fonction pour obtenir les clés disponibles (non encore sélectionnées)
-  const getAvailableKeys = (currentKeyId?: string) => {
-    const selectedKeys = jsonKeys
-      .filter((key) => key.id !== currentKeyId)
-      .map((key) => key.keyPath)
-      .filter((keyPath) => keyPath !== "")
-
-    return extractedKeys.filter((key) => !selectedKeys.includes(key))
+  const getAvailableRawKeys = (currentKeyId?: string) => {
+    const selectedKeyPaths = jsonKeys.filter((key) => key.id !== currentKeyId && key.keyPath).map((key) => key.keyPath)
+    return extractedKeys.filter((key) => !selectedKeyPaths.includes(key))
   }
 
-  // Fonction pour auto-détecter les positions
-  const autoDetectKeyPositions = () => {
-    if (extractedKeys.length === 0) return
-
-    // Créer des positions automatiques pour chaque clé
-    const keysWithPositions = extractedKeys.map((key, index) => {
-      // Calculer des positions basées sur l'index
-      // Chaque clé aura une plage de 10 caractères
-      const startPos = index * 10 + 1
-      const endPos = startPos + 9
-
-      return {
-        id: `key-${index}`,
-        keyPath: key,
-        startPosition: startPos,
-        endPosition: endPos,
-      }
-    })
-
-    setJsonKeys(keysWithPositions)
-
-    toast({
-      title: "Positions auto-détectées",
-      description: `${keysWithPositions.length} clés ont reçu des positions automatiques`,
-    })
-  }
-
-  // Effet pour auto-détecter les positions quand les clés sont extraites
-  useEffect(() => {
-    if (extractedKeys.length > 0 && autoDetectPositions && jsonKeys.length === 0) {
-      autoDetectKeyPositions()
-    }
-  }, [extractedKeys, autoDetectPositions])
-
+  // Mettre à jour handleSave pour inclure typeLigne dans PositionJsonDto
   const handleSave = async () => {
-    if (!selectedFile) {
-      toast({
-        title: "Erreur",
-        description: "Veuillez sélectionner un fichier JSON",
-        variant: "destructive",
-      })
+    if (!selectedFile || !fileDestination.trim() || jsonKeys.length === 0) {
+      toast({ title: "Erreur", description: "Veuillez compléter tous les champs requis.", variant: "destructive" })
       return
     }
-
-    if (!fileDestination.trim()) {
+    if (jsonKeys.some((key) => !key.keyPath || !key.typeLigne)) {
       toast({
         title: "Erreur",
-        description: "Veuillez spécifier un nom de fichier de destination",
-        variant: "destructive",
-      })
-      return
-    }
-
-    if (jsonKeys.length === 0) {
-      toast({
-        title: "Erreur",
-        description: "Veuillez configurer au moins une clé avec ses positions",
-        variant: "destructive",
-      })
-      return
-    }
-
-    // Valider que toutes les clés ont des positions valides
-    const invalidKeys = jsonKeys.filter((key) => !key.keyPath.trim() || key.startPosition >= key.endPosition)
-    if (invalidKeys.length > 0) {
-      toast({
-        title: "Erreur",
-        description: "Certaines clés ont des configurations invalides",
+        description: "Chaque clé doit avoir un chemin et un type de ligne.",
         variant: "destructive",
       })
       return
@@ -274,53 +175,22 @@ export function JsonStructureUploader({ onComplete, defaultFileDestination }: Js
     setError(null)
 
     try {
-      // Préparer les données pour l'envoi
-      const formData = new FormData()
-      formData.append("file", selectedFile)
-
-      const metadata = {
+      const metadata: JsonUploadRequest = {
         fileDestination: fileDestination.trim(),
         positionJsonDtos: jsonKeys.map((key) => ({
-          keyPayh: key.keyPath, // Note: le backend utilise "keyPayh" (avec une faute de frappe)
-          start_position: key.startPosition,
-          end_position: key.endPosition,
+          keyPayh: key.keyPath,
+          typeLigne: key.typeLigne || "02", // Inclure le type de ligne
         })),
       }
+      // Utiliser la fonction importée pour l'upload
+      await uploadJsonStructureWithPositions(selectedFile, metadata)
 
-      formData.append("metadata", new Blob([JSON.stringify(metadata)], { type: "application/json" }))
-
-      const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8082"}/api/json-keys/saveKeys-withPosition`,
-        {
-          method: "POST",
-          body: formData,
-        },
-      )
-
-      if (!response.ok) {
-        const errorText = await response.text()
-        throw new Error(errorText || "Erreur lors de la sauvegarde")
-      }
-
-      const result = await response.text()
-
-      toast({
-        title: "Succès",
-        description: "Structure JSON sauvegardée avec succès",
-      })
-
-      // Appeler le callback si fourni
-      if (onComplete) {
-        onComplete(fileDestination.trim())
-      }
-    } catch (error) {
-      console.error("Erreur lors de la sauvegarde:", error)
-      setError(error instanceof Error ? error.message : "Erreur lors de la sauvegarde")
-      toast({
-        title: "Erreur",
-        description: error instanceof Error ? error.message : "Erreur lors de la sauvegarde",
-        variant: "destructive",
-      })
+      toast({ title: "Succès", description: "Structure JSON sauvegardée." })
+      if (onComplete) onComplete(fileDestination.trim(), jsonKeys) // Passer les clés sauvegardées
+    } catch (saveError) {
+      const errorMessage = saveError instanceof Error ? saveError.message : "Erreur de sauvegarde"
+      setError(errorMessage)
+      toast({ title: "Erreur de sauvegarde", description: errorMessage, variant: "destructive" })
     } finally {
       setIsLoading(false)
     }
@@ -331,8 +201,7 @@ export function JsonStructureUploader({ onComplete, defaultFileDestination }: Js
       <Card className="border-slate-200 dark:border-white/10 bg-white/50 dark:bg-white/5 backdrop-blur-sm">
         <CardHeader>
           <CardTitle className="text-lg font-medium flex items-center gap-2">
-            <FileJson className="h-5 w-5 text-[#F55B3B]" />
-            Upload de Structure JSON
+            <FileJson className="h-5 w-5 text-[#F55B3B]" /> Upload de Structure JSON
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -343,45 +212,28 @@ export function JsonStructureUploader({ onComplete, defaultFileDestination }: Js
               <AlertDescription>{error}</AlertDescription>
             </Alert>
           )}
-
-          {/* Upload de fichier */}
           <div className="space-y-2">
             <Label>Fichier JSON de structure</Label>
             <div className="flex gap-2">
               <input ref={fileInputRef} type="file" accept=".json" onChange={handleFileSelect} className="hidden" />
-              <Button
-                variant="outline"
-                onClick={() => fileInputRef.current?.click()}
-                className="flex-1 border-dashed border-2 border-[#F55B3B]/30 hover:border-[#F55B3B]/50 hover:bg-[#F55B3B]/5"
-              >
-                <Upload className="h-4 w-4 mr-2" />
-                {selectedFile ? selectedFile.name : "Sélectionner un fichier JSON"}
+              <Button variant="outline" onClick={() => fileInputRef.current?.click()} className="flex-1 border-dashed">
+                <Upload className="h-4 w-4 mr-2" /> {selectedFile ? selectedFile.name : "Sélectionner un fichier"}
               </Button>
             </div>
           </div>
-
-          {/* Nom du fichier de destination */}
           <div className="space-y-2">
             <Label>Nom du fichier de destination</Label>
             <Input
               value={fileDestination}
               onChange={(e) => setFileDestination(e.target.value)}
               placeholder="ex: StructureV1"
-              className="bg-white/50 dark:bg-white/5 border-slate-200 dark:border-white/10"
             />
           </div>
-
-          {/* Aperçu du JSON */}
           {jsonContent && (
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <Label>Aperçu du fichier JSON</Label>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setShowPreview(!showPreview)}
-                  className="text-slate-600 dark:text-white/70"
-                >
+                <Label>Aperçu JSON</Label>
+                <Button variant="ghost" size="sm" onClick={() => setShowPreview(!showPreview)}>
                   {showPreview ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </Button>
               </div>
@@ -397,42 +249,35 @@ export function JsonStructureUploader({ onComplete, defaultFileDestination }: Js
               )}
             </div>
           )}
-
-          {/* Clés détectées */}
           {extractedKeys.length > 0 && (
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <Label>Clés détectées ({extractedKeys.length})</Label>
-                <div className="flex gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={autoDetectKeyPositions}
-                    className="border-[#FCBD00] text-[#FCBD00] hover:bg-[#FCBD00]/10"
-                  >
-                    <RefreshCw className="h-4 w-4 mr-2" />
-                    Recalculer positions
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={useAllDetectedKeys}
-                    className="border-[#FCBD00] text-[#FCBD00] hover:bg-[#FCBD00]/10"
-                  >
-                    <Plus className="h-4 w-4 mr-2" />
-                    Utiliser toutes les clés
-                  </Button>
-                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={useAllDetectedKeys}
+                  className="border-[#FCBD00] text-[#FCBD00] hover:bg-[#FCBD00]/10"
+                >
+                  <Plus className="h-4 w-4 mr-2" /> Appliquer toutes les clés détectées
+                </Button>
               </div>
-              <div className="flex flex-wrap gap-2 max-h-32 overflow-auto p-2 bg-slate-50 dark:bg-white/5 rounded">
-                {extractedKeys.map((key, index) => (
-                  <Badge
-                    key={index}
-                    variant="outline"
-                    className="text-xs bg-[#FCBD00]/10 border-[#FCBD00]/30 text-[#FCBD00]"
-                  >
-                    {key}
-                  </Badge>
+              <div className="max-h-60 overflow-auto p-2 bg-slate-50 dark:bg-white/5 rounded border">
+                {Object.entries(getOrganizedKeys()).map(([group, keysInGroup]) => (
+                  <div key={group} className="mb-3">
+                    <h4 className="text-sm font-medium mb-1 text-slate-700 dark:text-white/80">{group}</h4>
+                    <div className="flex flex-wrap gap-2 pl-2">
+                      {keysInGroup.map((key, index) => (
+                        <Badge
+                          key={`${group}-${index}`}
+                          variant="outline"
+                          className="text-xs bg-[#FCBD00]/10 border-[#FCBD00]/30 text-[#FCBD00]"
+                        >
+                          {key.includes(group + ".") ? key.substring(group.length + 1) : key}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
                 ))}
               </div>
             </div>
@@ -440,21 +285,18 @@ export function JsonStructureUploader({ onComplete, defaultFileDestination }: Js
         </CardContent>
       </Card>
 
-      {/* Configuration des positions */}
-      {extractedKeys.length > 0 && (
+      {jsonKeys.length > 0 && (
         <Card className="border-slate-200 dark:border-white/10 bg-white/50 dark:bg-white/5 backdrop-blur-sm">
           <CardHeader>
             <div className="flex items-center justify-between">
-              <CardTitle className="text-lg font-medium">Configuration des Positions</CardTitle>
+              <CardTitle className="text-lg font-medium">Configuration des Clés JSON et Types de Ligne</CardTitle>
               <Button
                 variant="outline"
                 size="sm"
                 onClick={addJsonKey}
                 className="border-[#F55B3B] text-[#F55B3B] hover:bg-[#F55B3B]/10"
-                disabled={getAvailableKeys().length === 0}
               >
-                <Plus className="h-4 w-4 mr-2" />
-                Ajouter une clé
+                <Plus className="h-4 w-4 mr-2" /> Ajouter une clé manuellement
               </Button>
             </div>
           </CardHeader>
@@ -462,21 +304,12 @@ export function JsonStructureUploader({ onComplete, defaultFileDestination }: Js
             <div className="space-y-4">
               <Alert className="bg-[#FCBD00]/10 border-[#FCBD00]/30">
                 <Wand2 className="h-4 w-4 text-[#FCBD00]" />
-                <AlertTitle className="text-[#FCBD00]">Positions automatiques</AlertTitle>
+                <AlertTitle className="text-[#FCBD00]">Configuration des Types de Ligne</AlertTitle>
                 <AlertDescription>
-                  Les positions définissent où extraire les données dans le fichier plat. Chaque clé doit avoir une
-                  position de début et de fin.
+                  Pour chaque clé JSON, sélectionnez le type de ligne correspondant (Entête, Données, etc.). Le type de
+                  ligne est crucial pour le mapping.
                 </AlertDescription>
               </Alert>
-
-              {jsonKeys.length === 0 && (
-                <div className="text-center py-8 text-slate-500 dark:text-white/60">
-                  <FileJson className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                  <p>Aucune clé configurée</p>
-                  <p className="text-sm">Cliquez sur "Utiliser toutes les clés" ou "Ajouter une clé" pour commencer</p>
-                </div>
-              )}
-
               <AnimatePresence mode="popLayout">
                 {jsonKeys.map((jsonKey) => (
                   <motion.div
@@ -485,105 +318,85 @@ export function JsonStructureUploader({ onComplete, defaultFileDestination }: Js
                     initial={{ opacity: 0, scale: 0.95 }}
                     animate={{ opacity: 1, scale: 1 }}
                     exit={{ opacity: 0, scale: 0.95 }}
-                    className="grid grid-cols-12 gap-3 items-end p-3 bg-slate-50 dark:bg-white/5 rounded-lg"
+                    className="grid grid-cols-1 md:grid-cols-[3fr_2fr_auto] gap-4 items-end p-3 bg-slate-50 dark:bg-white/5 rounded-lg mb-2"
                   >
-                    <div className="col-span-5">
+                    <div>
                       <Label className="text-xs mb-1 block">Clé JSON</Label>
                       <Select
                         value={jsonKey.keyPath}
                         onValueChange={(value) => updateJsonKey(jsonKey.id, "keyPath", value)}
                       >
                         <SelectTrigger className="bg-white dark:bg-white/10 text-sm">
-                          <SelectValue placeholder="Sélectionner une clé JSON" />
+                          <SelectValue placeholder="Sélectionner une clé" />
                         </SelectTrigger>
-                        <SelectContent className="bg-white dark:bg-[#17171E]/95 backdrop-blur-xl border-slate-200 dark:border-white/20 max-h-60">
-                          <SelectGroup>
-                            <SelectLabel className="text-slate-500 dark:text-white/60">
-                              Clés disponibles ({getAvailableKeys(jsonKey.id).length + (jsonKey.keyPath ? 1 : 0)})
-                            </SelectLabel>
-                            {/* Afficher la clé actuellement sélectionnée */}
-                            {jsonKey.keyPath && (
-                              <SelectItem
-                                value={jsonKey.keyPath}
-                                className="hover:bg-slate-100 dark:hover:bg-white/10 focus:bg-slate-100 dark:focus:bg-white/10 rounded-lg"
-                              >
-                                <div className="flex items-center justify-between w-full">
-                                  <span>{jsonKey.keyPath}</span>
-                                  <Check className="h-4 w-4 text-green-500 ml-2" />
-                                </div>
-                              </SelectItem>
-                            )}
-                            {/* Afficher les clés disponibles */}
-                            {getAvailableKeys(jsonKey.id).map((key) => (
-                              <SelectItem
-                                key={key}
-                                value={key}
-                                className="hover:bg-slate-100 dark:hover:bg-white/10 focus:bg-slate-100 dark:focus:bg-white/10 rounded-lg"
-                              >
-                                {key}
-                              </SelectItem>
-                            ))}
-                          </SelectGroup>
+                        <SelectContent className="bg-white dark:bg-[#17171E]/95 max-h-60">
+                          {jsonKey.keyPath && (
+                            <SelectItem value={jsonKey.keyPath} className="font-semibold">
+                              {jsonKey.keyPath} (Actuelle)
+                            </SelectItem>
+                          )}
+                          {getAvailableRawKeys(jsonKey.id).map((key) => (
+                            <SelectItem key={key} value={key}>
+                              {key}
+                            </SelectItem>
+                          ))}
                         </SelectContent>
                       </Select>
                     </div>
-                    <div className="col-span-3">
-                      <Label className="text-xs mb-1 block">Position début</Label>
-                      <Input
-                        type="number"
-                        value={jsonKey.startPosition}
-                        onChange={(e) => updateJsonKey(jsonKey.id, "startPosition", Number.parseInt(e.target.value))}
-                        className="bg-white dark:bg-white/10 text-sm"
-                        min="1"
-                      />
-                    </div>
-                    <div className="col-span-3">
-                      <Label className="text-xs mb-1 block">Position fin</Label>
-                      <Input
-                        type="number"
-                        value={jsonKey.endPosition}
-                        onChange={(e) => updateJsonKey(jsonKey.id, "endPosition", Number.parseInt(e.target.value))}
-                        className="bg-white dark:bg-white/10 text-sm"
-                        min="1"
-                      />
-                    </div>
-                    <div className="col-span-1 flex justify-end">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => removeJsonKey(jsonKey.id)}
-                        className="text-red-500 hover:bg-red-500/10"
+                    <div>
+                      <Label className="text-xs mb-1 block">Type Ligne</Label>
+                      <Select
+                        value={jsonKey.typeLigne || "02"}
+                        onValueChange={(value) => updateJsonKey(jsonKey.id, "typeLigne", value)}
                       >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                        <SelectTrigger className="bg-white dark:bg-white/10 text-sm">
+                          <SelectValue placeholder="Type" />
+                        </SelectTrigger>
+                        <SelectContent className="bg-white dark:bg-[#17171E]/95">
+                          {lineTypeOptions.map((opt) => (
+                            <SelectItem key={opt.value} value={opt.value}>
+                              {opt.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => removeJsonKey(jsonKey.id)}
+                      className="text-red-500 hover:bg-red-500/10"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
                   </motion.div>
                 ))}
               </AnimatePresence>
             </div>
           </CardContent>
-          <CardFooter className="flex justify-end pt-4 border-t border-slate-200 dark:border-white/10">
-            <Button
-              onClick={handleSave}
-              disabled={isLoading || !selectedFile || !fileDestination.trim() || jsonKeys.length === 0}
-              className="bg-gradient-to-r from-[#FCBD00] to-[#ffd747] hover:opacity-90 text-slate-800 font-medium shadow-lg"
-            >
-              {isLoading ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Sauvegarde...
-                </>
-              ) : (
-                <>
-                  <Save className="h-4 w-4 mr-2" />
-                  Sauvegarder la Structure ({jsonKeys.length} clés)
-                </>
-              )}
-            </Button>
-          </CardFooter>
+          <div className="p-4 border-t border-slate-200 dark:border-white/10">
+            <div className="flex justify-end">
+              <Button
+                onClick={handleSave}
+                disabled={isLoading}
+                className="bg-gradient-to-r from-[#FCBD00] to-[#ffd747] hover:opacity-90 text-slate-800 font-medium shadow-lg"
+              >
+                {isLoading ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Sauvegarde...
+                  </>
+                ) : (
+                  <>
+                    <Save className="h-4 w-4 mr-2" />
+                    Sauvegarder Structure ({jsonKeys.length} clés)
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
         </Card>
       )}
     </div>
-  )
+  );
 }
-
