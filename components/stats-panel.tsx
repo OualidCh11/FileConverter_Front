@@ -7,10 +7,10 @@ import { Progress } from "@/components/ui/progress"
 export function StatsPanel() {
   // Sample data for statistics
   const stats = [
-    { id: 1, label: "Total Files", value: 128, icon: FileUp, color: "[#F55B3B]" },
-    { id: 2, label: "Converted", value: 98, icon: FileJson, color: "[#FCBD00]" },
-    { id: 3, label: "Success Rate", value: "76%", icon: CheckCircle, color: "green-500" },
-    { id: 4, label: "Pending", value: 12, icon: Clock, color: "purple-500" },
+    { id: 1, label: "Total Files", value: 128, icon: FileUp, themeColor: "primary" },
+    { id: 2, label: "Converted", value: 98, icon: FileJson, themeColor: "secondary" },
+    { id: 3, label: "Success Rate", value: "76%", icon: CheckCircle, twColor: "green-500" },
+    { id: 4, label: "Pending", value: 12, icon: Clock, twColor: "purple-500" },
   ]
 
   // Sample data for recent conversions
@@ -46,9 +46,15 @@ export function StatsPanel() {
                     <p className="text-sm font-medium text-slate-500 dark:text-white/60">{stat.label}</p>
                     <h3 className="text-2xl font-bold mt-1 text-slate-800 dark:text-white">{stat.value}</h3>
                   </div>
-                  <div className={`h-12 w-12 rounded-full bg-${stat.color}/10 flex items-center justify-center`}>
-                    <stat.icon className={`h-6 w-6 text-${stat.color}`} />
-                  </div>
+                  {(() => {
+                    const bgColorClass = stat.themeColor ? `bg-${stat.themeColor}/10` : `bg-${stat.twColor}/10`
+                    const textColorClass = stat.themeColor ? `text-${stat.themeColor}` : `text-${stat.twColor}`
+                    return (
+                      <div className={`h-12 w-12 rounded-full ${bgColorClass} flex items-center justify-center`}>
+                        <stat.icon className={`h-6 w-6 ${textColorClass}`} />
+                      </div>
+                    )
+                  })()}
                 </div>
               </CardContent>
             </Card>
@@ -66,7 +72,7 @@ export function StatsPanel() {
           <CardHeader className="pb-2">
             <CardTitle className="text-lg font-medium flex items-center gap-2">
               <BarChart3 className="h-5 w-5 text-[#F55B3B]" />
-              Type de fichier Distribution
+              File Type Distribution
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -95,7 +101,7 @@ export function StatsPanel() {
           <CardHeader className="pb-2">
             <CardTitle className="text-lg font-medium flex items-center gap-2">
               <Clock className="h-5 w-5 text-[#FCBD00]" />
-              Conversions récentes
+              Recent Conversions
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -103,10 +109,10 @@ export function StatsPanel() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-slate-200 dark:border-white/10">
-                    <th className="text-left py-3 px-4 font-medium text-slate-500 dark:text-white/60">Nom du fichier</th>
-                    <th className="text-left py-3 px-4 font-medium text-slate-500 dark:text-white/60">Statut du fichier</th>
+                    <th className="text-left py-3 px-4 font-medium text-slate-500 dark:text-white/60">File Name</th>
+                    <th className="text-left py-3 px-4 font-medium text-slate-500 dark:text-white/60">Status</th>
                     <th className="text-left py-3 px-4 font-medium text-slate-500 dark:text-white/60">Date</th>
-                    <th className="text-left py-3 px-4 font-medium text-slate-500 dark:text-white/60">Enregistrements</th>
+                    <th className="text-left py-3 px-4 font-medium text-slate-500 dark:text-white/60">Records</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -142,4 +148,3 @@ export function StatsPanel() {
     </div>
   )
 }
-

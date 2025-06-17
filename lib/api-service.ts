@@ -12,7 +12,6 @@ export interface FileEntity {
 
 export interface FileDetail {
   id: number
-  // id: number // Duplicate id property removed
   nrLines: number
   contentFile: string
   statut: "AT" | "RE" | "TR"
@@ -43,7 +42,7 @@ export interface ConfigMappingDetail {
   fileDetail?: FileDetail
   outMappings?: OutMapping[]
   typeLigneSource?: string // Added for source line type
-  typeLigneDestination?: string // Added for destination line type
+  typeLigneDestination?: string // This should align with JsonStructure's typeLine if it's from there
 }
 
 export interface OutMapping {
@@ -53,14 +52,13 @@ export interface OutMapping {
   configMappingDetail?: ConfigMappingDetail
 }
 
+// Corrected JsonStructure to match backend entity (typeLine)
 export interface JsonStructure {
   id: number
   keyPath: string
   fileDestination: string
-  dateCreated: string
-  start_position?: number
-  end_position?: number
-  typeLigne?: string // Added for JSON key line type
+  dateCreated: string // Assuming backend sends string representation
+  typeLine?: string // Corrected from typeLigne, and optional as it can be null
 }
 
 export interface MappingDTO {
@@ -76,16 +74,15 @@ export interface ConfigMappingDTO {
   nrLineFiles?: number
   configMappingId?: number
   fileDetailId?: number
-  typeLigneSource?: string // Added for source line type
-  typeLigneDestination?: string // Added for destination line type
+  typeLigneSource?: string
+  typeLigneDestination?: string // This should align with JsonStructure's typeLine
 }
 
 // Types pour l'upload de structure JSON
+// Corrected PositionJsonDto to match backend Java DTO
 export interface PositionJsonDto {
-  keyPayh: string // Note: le backend utilise "keyPayh" avec une faute de frappe
-  start_position?: number
-  end_position?: number
-  typeLigne?: string // Added for JSON key line type
+  keyPath: string // Corrected from keyPayh
+  typeLine?: string // Corrected from typeLigne, and matches backend DTO
 }
 
 export interface JsonUploadRequest {
@@ -119,15 +116,13 @@ export async function uploadFile(file: File): Promise<string> {
   }
 }
 
-// Service pour uploader un fichier JSON de structure avec positions et types de ligne
 export async function uploadJsonStructureWithPositions(file: File, metadata: JsonUploadRequest): Promise<string> {
   try {
     const formData = new FormData()
-    formData.append("file", file)
+    formData.append("file", file) // The actual JSON file
     formData.append("metadata", new Blob([JSON.stringify(metadata)], { type: "application/json" }))
 
     const response = await fetch(`${API_BASE_URL}/api/json-keys/saveKeys-withPosition`, {
-      // Assuming this endpoint can handle typeLigne
       method: "POST",
       body: formData,
     })
@@ -144,33 +139,6 @@ export async function uploadJsonStructureWithPositions(file: File, metadata: Jso
   }
 }
 
-// Service pour uploader un fichier JSON de structure (ancien endpoint) - Potentially deprecate or update
-export async function uploadJsonStructureFile(file: File, fileDestination: string): Promise<string> {
-  try {
-    const formData = new FormData()
-    formData.append("file", file)
-    formData.append("fileDestination", fileDestination)
-
-    // This old endpoint might not support typeLigne for JSON keys.
-    // For now, it's kept as is, but ideally, it should be updated or new logic should use uploadJsonStructureWithPositions
-    const response = await fetch(`${API_BASE_URL}/api/json-structure/upload`, {
-      method: "POST",
-      body: formData,
-    })
-
-    if (!response.ok) {
-      const errorText = await response.text()
-      throw new Error(errorText || "Erreur lors de l'upload du fichier JSON de structure")
-    }
-
-    return await response.text()
-  } catch (error) {
-    console.error("Erreur lors de l'upload du fichier JSON de structure:", error)
-    throw error
-  }
-}
-
-// Service pour récupérer les structures JSON par destination (should now include typeLigne)
 export async function getJsonStructuresByDestination(fileDestination: string): Promise<JsonStructure[]> {
   try {
     const response = await fetch(
@@ -187,9 +155,9 @@ export async function getJsonStructuresByDestination(fileDestination: string): P
       const errorText = await response.text()
       throw new Error(errorText || "Erreur lors de la récupération des structures JSON")
     }
-
-    const structures: JsonStructure[] = await response.json() // Assuming backend returns typeLigne
-    console.log("Structures récupérées depuis l'API:", structures)
+    // The backend should return JsonStructure objects which include keyPath and typeLigne for leaves.
+    // And potentially start_position/end_position if they were ever saved (though we won't save them from here).
+    const structures: JsonStructure[] = await response.json()
     return structures
   } catch (error) {
     console.error("Erreur lors de la récupération des structures JSON:", error)
@@ -197,10 +165,10 @@ export async function getJsonStructuresByDestination(fileDestination: string): P
   }
 }
 
-// Service pour récupérer toutes les destinations de structures JSON
+// Corrected endpoint to match backend controller
 export async function getAllJsonDestinations(): Promise<string[]> {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/json-keys/getAllDestinations`, {
+    const response = await fetch(`${API_BASE_URL}/api/json-keys/getAllFileDestinations`, {
       method: "GET",
       headers: {
         "Content-Type": "application/json",
@@ -211,66 +179,13 @@ export async function getAllJsonDestinations(): Promise<string[]> {
       const errorText = await response.text()
       throw new Error(errorText || "Erreur lors de la récupération des destinations")
     }
-
-    const destinations = await response.json()
-    return destinations
+    return await response.json()
   } catch (error) {
     console.error("Erreur lors de la récupération des destinations:", error)
     throw error
   }
 }
 
-// Service pour récupérer les clés de structure JSON (ancien endpoint) - Potentially deprecate or update
-export async function getJsonStructureKeys(fileDestination: string): Promise<string[]> {
-  try {
-    const response = await fetch(
-      `${API_BASE_URL}/api/json-structure/keys?fileDestination=${encodeURIComponent(fileDestination)}`,
-      {
-        method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-        },
-      },
-    )
-
-    if (!response.ok) {
-      const errorText = await response.text()
-      throw new Error(errorText || "Erreur lors de la récupération des clés de structure")
-    }
-
-    const jsonStructures: JsonStructure[] = await response.json()
-    // This returns only keyPath, not the full structure with typeLigne.
-    // Consider returning JsonStructure[] if typeLigne is needed here.
-    return jsonStructures.map((structure) => structure.keyPath)
-  } catch (error) {
-    console.error("Erreur lors de la récupération des clés de structure:", error)
-    throw error
-  }
-}
-
-// Service pour récupérer les détails d'un fichier
-export async function getFileDetails(fileId: number): Promise<FileDetail[]> {
-  try {
-    const response = await fetch(`${API_BASE_URL}/file-details/${fileId}`, {
-      method: "GET",
-      headers: {
-        "Content-Type": "application/json",
-      },
-    })
-
-    if (!response.ok) {
-      const errorText = await response.text()
-      throw new Error(errorText || "Erreur lors de la récupération des détails du fichier")
-    }
-
-    return await response.json()
-  } catch (error) {
-    console.error("Erreur lors de la récupération des détails du fichier:", error)
-    throw error
-  }
-}
-
-// Service pour sauvegarder une configuration de mapping
 export async function saveConfigMapping(configMappingDetails: ConfigMappingDTO[]): Promise<ConfigMappingDetail[]> {
   try {
     const response = await fetch(`${API_BASE_URL}/api/conf-map/save_confmap`, {
@@ -285,7 +200,6 @@ export async function saveConfigMapping(configMappingDetails: ConfigMappingDTO[]
       const errorText = await response.text()
       throw new Error(errorText || "Erreur lors de la sauvegarde de la configuration")
     }
-
     return await response.json()
   } catch (error) {
     console.error("Erreur lors de la sauvegarde de la configuration:", error)
@@ -307,7 +221,6 @@ export async function saveMapping(mapping: MappingDTO): Promise<ConfigMapping> {
       const errorText = await response.text()
       throw new Error(errorText || "Erreur lors de la sauvegarde du mapping")
     }
-
     return await response.json()
   } catch (error) {
     console.error("Erreur lors de la sauvegarde du mapping:", error)
@@ -315,7 +228,6 @@ export async function saveMapping(mapping: MappingDTO): Promise<ConfigMapping> {
   }
 }
 
-// Service pour générer le fichier JSON final
 export async function generateJsonFile(): Promise<string> {
   try {
     const response = await fetch(`${API_BASE_URL}/api/output/jsonFile`, {
@@ -329,7 +241,6 @@ export async function generateJsonFile(): Promise<string> {
       const errorText = await response.text()
       throw new Error(errorText || "Erreur lors de la génération du fichier JSON")
     }
-
     return await response.text()
   } catch (error) {
     console.error("Erreur lors de la génération du fichier JSON:", error)
@@ -337,65 +248,38 @@ export async function generateJsonFile(): Promise<string> {
   }
 }
 
-// Service pour récupérer le contenu du fichier JSON généré
 export async function getJsonFileContent(fileName: string): Promise<string> {
   try {
-    // Essayer d'abord de récupérer le dernier OutMapping enregistré
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/output/last-mapping`, {
-        method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-        },
-      })
-
-      if (response.ok) {
-        const outMapping = await response.json()
-        if (outMapping && outMapping.contentMapper) {
-          return outMapping.contentMapper
-        }
-      }
-    } catch (error) {
-      console.warn("Endpoint pour récupérer le dernier mapping non disponible, essai alternatif...")
-    }
-
-    // Alternative: essayer de récupérer le contenu via un endpoint dédié
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/output/content?fileName=${encodeURIComponent(fileName)}`, {
-        method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-        },
-      })
-
-      if (response.ok) {
-        return await response.text()
-      }
-    } catch (error) {
-      console.warn("Endpoint pour récupérer le contenu du fichier non disponible, utilisation de l'alternative...")
-    }
-
-    // Si tout échoue, essayer de générer le fichier JSON à nouveau
-    const generationResponse = await fetch(`${API_BASE_URL}/api/output/jsonFile`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+    const response = await fetch(`${API_BASE_URL}/api/output/last-mapping`, {
+      method: "GET",
+      headers: { "Content-Type": "application/json" },
     })
-
-    if (generationResponse.ok) {
-      const responseText = await generationResponse.text()
-      // Essayer d'extraire le JSON de la réponse
-      const jsonMatch = responseText.match(/\[[\s\S]*\]/)
-      if (jsonMatch) {
-        return jsonMatch[0]
-      }
-      return responseText
+    if (response.ok) {
+      const outMapping = await response.json()
+      if (outMapping && outMapping.contentMapper) return outMapping.contentMapper
     }
-
-    throw new Error("Impossible de récupérer le contenu du fichier JSON")
-  } catch (error) {
-    console.error("Erreur lors de la récupération du contenu du fichier JSON:", error)
-    throw error
+  } catch (e) {
+    /* ignore */
   }
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/output/content?fileName=${encodeURIComponent(fileName)}`, {
+      method: "GET",
+      headers: { "Content-Type": "application/json" },
+    })
+    if (response.ok) return await response.text()
+  } catch (e) {
+    /* ignore */
+  }
+
+  const generationResponse = await fetch(`${API_BASE_URL}/api/output/jsonFile`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+  })
+  if (generationResponse.ok) {
+    const text = await generationResponse.text()
+    const jsonMatch = text.match(/\[[\s\S]*\]|{[\s\S]*}/)
+    return jsonMatch ? jsonMatch[0] : text
+  }
+  throw new Error("Impossible de récupérer le contenu du fichier JSON")
 }
