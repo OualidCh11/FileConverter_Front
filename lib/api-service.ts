@@ -91,7 +91,12 @@ export interface JsonUploadRequest {
 }
 
 // URL de base de l'API
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8082"
+// Ensure NEXT_PUBLIC_API_URL is used if set and not empty, otherwise fallback to localhost:8082
+const envApiUrl =
+  typeof process !== "undefined" && process.env && process.env.NEXT_PUBLIC_API_URL
+    ? process.env.NEXT_PUBLIC_API_URL.trim()
+    : ""
+const API_BASE_URL = envApiUrl !== "" ? envApiUrl : "http://localhost:8082"
 
 // Service pour l'upload de fichiers
 export async function uploadFile(file: File): Promise<string> {

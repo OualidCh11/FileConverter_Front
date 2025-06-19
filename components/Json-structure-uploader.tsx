@@ -24,9 +24,8 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useToast } from "@/hooks/use-toast"
 import { uploadJsonStructureWithPositions } from "@/lib/api-service"
-import type { JsonUploadRequest, PositionJsonDto } from "@/lib/api-service" // PositionJsonDto now uses keyPath and typeLine
+import type { JsonUploadRequest, PositionJsonDto } from "@/lib/api-service"
 
-// Options for line type
 const lineTypeOptions = [
   { value: "01", label: "01 - Entête" },
   { value: "02", label: "02 - Données" },
@@ -34,15 +33,14 @@ const lineTypeOptions = [
   { value: "04", label: "04 - Pied" },
 ]
 
-// Interface for tree nodes
 export interface JsonTreeNode {
   id: string
-  name: string // The key name (e.g., "street", "0" for array index)
-  path: string // Full dot-notation path (e.g., "address.street", "items[*].productName")
+  name: string // The key name (e.g., "street", "0" for array index, or filename for root)
+  path: string // Full dot-notation path from the JSON content root (e.g., "address.street", "items.productName")
   nodeType: "object" | "array" | "leaf"
   children?: JsonTreeNode[]
-  typeLigne?: string // Stays as typeLigne for frontend state, will be mapped to typeLine for API
-  exampleValue?: string // Only for 'leaf' nodes
+  typeLigne?: string
+  exampleValue?: string
   isExpanded?: boolean
 }
 
@@ -51,7 +49,6 @@ interface JsonStructureUploaderProps {
   defaultFileDestination?: string
 }
 
-// Recursive component to display tree nodes
 const JsonTreeNodeDisplay: React.FC<{
   node: JsonTreeNode
   onToggleExpand: (nodeId: string) => void
@@ -90,7 +87,11 @@ const JsonTreeNodeDisplay: React.FC<{
 
         <Icon className="h-4 w-4 text-slate-500 dark:text-slate-400 flex-shrink-0" />
         <span className="font-medium text-sm text-slate-700 dark:text-slate-300 flex-grow truncate" title={node.path}>
-          {node.name} <span className="text-xs text-muted-foreground">({node.path})</span>
+          {node.name}
+          {node.path &&
+            node.name !== node.path && ( // Display path only if it's different from name (i.e. not root)
+              <span className="text-xs text-muted-foreground ml-1">({node.path})</span>
+            )}
         </span>
 
         {node.nodeType === "leaf" && (
@@ -145,7 +146,7 @@ export function JsonStructureUploader({ onComplete, defaultFileDestination }: Js
   const { toast } = useToast()
 
   const parseJsonToTreeData = useCallback(
-    (jsonData: any, currentPath = "", currentName = "root", depth = 0): JsonTreeNode => {
+    (jsonData: any, currentPath: string, currentName: string, depth = 0): JsonTreeNode => {
       const MAX_DEPTH = 20
       const id = `${currentPath || currentName}-${depth}-${Math.random().toString(36).substring(2, 7)}`
 
@@ -153,7 +154,7 @@ export function JsonStructureUploader({ onComplete, defaultFileDestination }: Js
         return {
           id,
           name: currentName,
-          path: currentPath || currentName,
+          path: currentPath,
           nodeType: "leaf",
           exampleValue: "[Max depth reached]",
           typeLigne: "02",
@@ -165,34 +166,57 @@ export function JsonStructureUploader({ onComplete, defaultFileDestination }: Js
         const arrayNode: JsonTreeNode = {
           id,
           name: currentName,
-          path: currentPath || currentName,
+          path: currentPath,
           nodeType: "array",
           isExpanded: depth < 2,
           children: [],
         }
         if (jsonData.length > 0) {
-          const itemPathPrefix = `${currentPath || currentName}[*]`
-          arrayNode.children = [parseJsonToTreeData(jsonData[0], itemPathPrefix, "[*]", depth + 1)]
+          const firstElement = jsonData[0]
+          // Path for items within an array is complex. For simplicity, we model the structure of the first item.
+          // The 'path' for leaf nodes within array items will be constructed relative to the array's path.
+          // Example: if array path is "items", a leaf "productName" inside an item will have path "items.productName".
+          // This requires careful path construction in the recursive call.
+          if (typeof firstElement === "object" && firstElement !== null) {
+            arrayNode.children = Object.keys(firstElement).map((key) => {
+              const childPath = currentPath ? `${currentPath}.${key}` : key
+              return parseJsonToTreeData(firstElement[key], childPath, key, depth + 1)
+            })
+          } else {
+            // Array of primitives
+            arrayNode.children = [
+              {
+                id: `${arrayNode.id}-primitive-child`,
+                name: "[primitive value]",
+                path: currentPath, // Path is to the array itself for primitive arrays
+                nodeType: "leaf",
+                exampleValue: String(firstElement).substring(0, 30),
+                typeLigne: "02",
+                isExpanded: false,
+              },
+            ]
+          }
         }
         return arrayNode
       } else if (typeof jsonData === "object" && jsonData !== null) {
         const objectNode: JsonTreeNode = {
           id,
           name: currentName,
-          path: currentPath || currentName,
+          path: currentPath,
           nodeType: "object",
           isExpanded: depth < 2,
           children: Object.keys(jsonData).map((key) => {
-            const newPath = currentPath ? `${currentPath}.${key}` : key
-            return parseJsonToTreeData(jsonData[key], newPath, key, depth + 1)
+            const childPath = currentPath ? `${currentPath}.${key}` : key
+            return parseJsonToTreeData(jsonData[key], childPath, key, depth + 1)
           }),
         }
         return objectNode
       } else {
+        // Leaf node
         return {
           id,
           name: currentName,
-          path: currentPath || currentName,
+          path: currentPath,
           nodeType: "leaf",
           exampleValue: String(jsonData).substring(0, 30),
           typeLigne: "02",
@@ -209,6 +233,7 @@ export function JsonStructureUploader({ onComplete, defaultFileDestination }: Js
     if (!file.name.endsWith(".json")) {
       setError("Veuillez sélectionner un fichier JSON.")
       setJsonTree(null)
+      setSelectedFile(null)
       return
     }
     setSelectedFile(file)
@@ -219,7 +244,9 @@ export function JsonStructureUploader({ onComplete, defaultFileDestination }: Js
       try {
         const content = e.target?.result as string
         const parsedJson = JSON.parse(content)
-        const tree = parseJsonToTreeData(parsedJson, "", file.name.replace(".json", ""))
+        const rootDisplayName = file.name.replace(/\.json$/i, "")
+        // Initial call: currentPath is "", currentName is for display (e.g., filename).
+        const tree = parseJsonToTreeData(parsedJson, "", rootDisplayName)
         setJsonTree(tree)
         toast({ title: "Fichier analysé", description: "Structure JSON prête à être configurée." })
       } catch (parseError) {
@@ -268,10 +295,12 @@ export function JsonStructureUploader({ onComplete, defaultFileDestination }: Js
     })
   }
 
-  // Collects only leaf nodes as per UI constraint for assigning typeLigne
   const collectLeafNodesWithTypes = (node: JsonTreeNode, leaves: { keyPath: string; typeLine?: string }[] = []) => {
     if (node.nodeType === "leaf") {
-      leaves.push({ keyPath: node.path, typeLine: node.typeLigne }) // Map typeLigne to typeLine
+      // Ensure path is not empty and it's not a placeholder for array primitives
+      if (node.path && node.name !== "[primitive value]") {
+        leaves.push({ keyPath: node.path, typeLine: node.typeLigne })
+      }
     }
     if (node.children) {
       node.children.forEach((child) => collectLeafNodesWithTypes(child, leaves))
@@ -290,39 +319,31 @@ export function JsonStructureUploader({ onComplete, defaultFileDestination }: Js
 
     const leafNodesForApi = collectLeafNodesWithTypes(jsonTree)
 
-    // Filter out nodes where typeLine might be undefined if not set, though UI defaults to "02"
     const positionJsonDtos: PositionJsonDto[] = leafNodesForApi
-      .filter((leaf) => leaf.typeLine) // Ensure typeLine is set
+      .filter((leaf) => leaf.typeLine) // Ensure typeLine is defined
       .map((leaf) => ({
-        keyPath: leaf.keyPath,
+        keyPath: leaf.keyPath, // This is the critical path
         typeLine: leaf.typeLine,
       }))
 
-    if (positionJsonDtos.length === 0 && leafNodesForApi.length > 0) {
+    if (positionJsonDtos.length === 0) {
       toast({
-        title: "Avertissement",
-        description:
-          "Aucun type de ligne n'a été explicitement défini pour les champs feuilles. Utilisation des valeurs par défaut.",
-        variant: "default",
+        title: "Erreur",
+        description: "Aucun champ feuille avec type de ligne défini à sauvegarder.",
+        variant: "destructive",
       })
-      // If you still want to proceed with default types, ensure all leaves are included:
-      // positionJsonDtos = leafNodesForApi.map(leaf => ({ keyPath: leaf.keyPath, typeLine: leaf.typeLine || "02" }));
+      setIsLoading(false)
+      return
     }
-
-    // Backend validates if keyPath from DTO exists in the uploaded file.
-    // Backend also checks if fileDestination already exists.
 
     try {
       const metadata: JsonUploadRequest = {
         fileDestination: fileDestination.trim(),
         positionJsonDtos,
       }
-
       await uploadJsonStructureWithPositions(selectedFile, metadata)
-
       toast({ title: "Succès", description: "Structure JSON sauvegardée." })
       if (onComplete) {
-        // Pass back the keyPath and their assigned typeLine
         const savedKeys = positionJsonDtos.map((p) => ({ keyPath: p.keyPath, typeLine: p.typeLine }))
         onComplete(fileDestination.trim(), savedKeys)
       }
@@ -330,6 +351,7 @@ export function JsonStructureUploader({ onComplete, defaultFileDestination }: Js
       const errorMessage = saveError instanceof Error ? saveError.message : "Erreur de sauvegarde"
       setError(errorMessage)
       toast({ title: "Erreur de sauvegarde", description: errorMessage, variant: "destructive" })
+      console.error("Save error details:", saveError)
     } finally {
       setIsLoading(false)
     }
@@ -379,12 +401,13 @@ export function JsonStructureUploader({ onComplete, defaultFileDestination }: Js
         </CardContent>
       </Card>
 
-      {isLoading && !jsonTree && (
-        <div className="flex items-center justify-center py-4">
-          <Loader2 className="h-6 w-6 animate-spin text-primary" />
-          <span className="ml-2">Analyse du fichier JSON...</span>
-        </div>
-      )}
+      {isLoading &&
+        !jsonTree && ( // Show loading only when parsing, not during save
+          <div className="flex items-center justify-center py-4">
+            <Loader2 className="h-6 w-6 animate-spin text-primary" />
+            <span className="ml-2">Analyse du fichier JSON...</span>
+          </div>
+        )}
 
       {jsonTree && (
         <Card className="border-slate-200 dark:border-white/10 bg-white/50 dark:bg-white/5 backdrop-blur-sm">
@@ -413,7 +436,7 @@ export function JsonStructureUploader({ onComplete, defaultFileDestination }: Js
             <div className="mt-6 flex justify-end">
               <Button
                 onClick={handleSave}
-                disabled={isLoading}
+                disabled={isLoading} // Disable during save operation
                 className="bg-gradient-to-r from-[#FCBD00] to-[#ffd747] hover:opacity-90 text-slate-800 font-medium shadow-lg"
               >
                 {isLoading ? (

@@ -82,21 +82,6 @@ export function Sidebar({ activeSection, onSectionChange }: SidebarProps) {
           ))}
         </nav>
       </div>
-
-      <div className="mt-auto p-4">
-        <div className="p-4 rounded-xl bg-gradient-to-r from-[#F55B3B]/10 to-[#FCBD00]/10 backdrop-blur-sm border border-[#F55B3B]/30 transition-colors duration-500">
-          <h4 className="font-medium text-slate-800 dark:text-white mb-2">Besoin d'aide ?</h4>
-          <p className="text-sm text-slate-600 dark:text-white/70 mb-3">
-            Consultez notre documentation pour obtenir des conseils sur l'utilisation du convertisseur de fichiers.
-          </p>
-          <a
-            href="#"
-            className="text-sm font-medium text-[#F55B3B] hover:text-[#ff7b5b] transition-colors duration-300"
-          >
-            Voir la documentation →
-          </a>
-        </div>
-      </div>
     </div>
   )
 }
